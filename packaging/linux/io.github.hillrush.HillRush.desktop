@@ -1,0 +1,13 @@
+[Desktop Entry]
+Type=Application
+Version=1.5
+Name=Hill Rush
+GenericName=Hill Climb Driving Game
+Comment=Drive up crazy hills, grab coins and fuel, and upgrade your ride
+Exec=hillrush
+Icon=io.github.hillrush.HillRush
+Terminal=false
+Categories=Game;ArcadeGame;
+Keywords=hill;climb;racing;car;driving;physics;jeep;offroad;
+StartupWMClass=Hill Rush
+SingleMainWindow=true

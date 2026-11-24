@@ -1,0 +1,7 @@
+/build/
+/build-*/
+/dist/
+/packaging/.cache/
+*.png.tmp
+/*.log
+/.tools/

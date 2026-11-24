@@ -1,0 +1,39 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<component type="desktop-application">
+  <id>io.github.hillrush.HillRush</id>
+  <metadata_license>CC0-1.0</metadata_license>
+  <project_license>LicenseRef-proprietary</project_license>
+  <name>Hill Rush</name>
+  <summary>Physics-based hill climb driving game</summary>
+  <description>
+    <p>
+      Drive as far as you can over endless, ever steeper hills. Keep an eye on
+      the fuel gauge, collect coins, pull off flips and big air for bonuses,
+      and spend your coins on upgrades, new vehicles and new stages.
+    </p>
+    <ul>
+      <li>Six stages: Countryside, Desert, Arctic, Highlands, Moon and Mars</li>
+      <li>Five vehicles, each with four upgradeable parts</li>
+      <li>Real 2D physics with suspension, wheelies and air control</li>
+      <li>Online races with up to three friends on the same network</li>
+      <li>Keyboard, mouse and gamepad controls</li>
+    </ul>
+  </description>
+  <launchable type="desktop-id">io.github.hillrush.HillRush.desktop</launchable>
+  <content_rating type="oars-1.1"/>
+  <categories>
+    <category>Game</category>
+    <category>ArcadeGame</category>
+  </categories>
+  <provides>
+    <binary>hillrush</binary>
+  </provides>
+  <releases>
+    <release version="1.1.0" date="2026-10-23">
+      <description>
+        <p>Online races with friends, and Easy / Medium / Hard difficulty levels.</p>
+      </description>
+    </release>
+    <release version="1.0.0" date="2026-10-22"/>
+  </releases>
+</component>

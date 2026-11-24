@@ -1,0 +1,9 @@
+#pragma once
+
+namespace hr {
+
+inline constexpr const char* kGameName = "Hill Rush";
+inline constexpr const char* kGameId = "hillrush";
+inline constexpr const char* kVersion = "@PROJECT_VERSION@";
+
+} // namespace hr
