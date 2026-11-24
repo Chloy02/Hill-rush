@@ -172,12 +172,17 @@ void OnlineRaceScreen::update(float dt)
     }
     float gas = in.gas();
     float brake = in.brake();
+    float special = in.special();
     if (in.mouseDown() && !paused_) {
         if (CheckCollisionPointRec(in.mouse(), Hud::gasPedal(ui))) gas = 1.0f;
         if (CheckCollisionPointRec(in.mouse(), Hud::brakePedal(ui))) brake = 1.0f;
+        if ((run_->session().hasThrusters() || run_->session().hasNitro()) &&
+            CheckCollisionPointRec(in.mouse(), Hud::specialPedal(ui))) {
+            special = 1.0f;
+        }
     }
     // The race doesn't stop for the pause menu: the car just lets go of the pedals.
-    input_ = phase == net::Phase::Racing && !paused_ && !reported_ ? InputState{gas, brake} : InputState{};
+    input_ = phase == net::Phase::Racing && !paused_ && !reported_ ? InputState{gas, brake, special} : InputState{};
 
     // 3, 2, 1, GO.
     if (phase == net::Phase::Countdown) {
@@ -223,7 +228,8 @@ void OnlineRaceScreen::update(float dt)
 
     const Session& s = run_->session();
     const bool engineOn = !results_ && !s.isOver() && s.state() == RunState::Running && !finished_;
-    app_.audio().setEngine(engineOn, s.engineRpm(), s.throttle());
+    app_.audio().setEngine(engineOn, s.engineRpm(), s.throttle(), engineVoiceFor(run_->vehicle().id),
+                           s.boosting() ? 1.0f : 0.0f, s.thrusting());
 }
 
 void OnlineRaceScreen::fixedUpdate()
@@ -336,12 +342,14 @@ void OnlineRaceScreen::draw()
     if (!online) return;
     if (!results_) {
         drawTags(ui, *online);
-        run_->hud().draw(run_->session(), ui, input_.gas > 0.0f, input_.brake > 0.0f, true);
+        run_->hud().draw(run_->session(), ui, input_.gas > 0.0f, input_.brake > 0.0f, true, input_.special > 0.0f);
         drawStandings(ui, *online);
         drawConnection(ui, *online);
         drawRaceText(ui, *online);
+        const Session& s = run_->session();
+        const float top = 134.0f + (s.hasNitro() ? 34.0f : 0.0f) + (s.vehicle().hasRollCage() ? 32.0f : 0.0f);
         // Under the leaderboard, clear of the trick banners in the middle.
-        toasts_.draw(ui, 150.0f + 38.0f * static_cast<float>(online->room().players.size()) + 56.0f, 20.0f);
+        toasts_.draw(ui, top + 16.0f + 38.0f * static_cast<float>(online->room().players.size()) + 56.0f, 20.0f);
     }
     if (results_) drawResults(ui, *online);
     else if (paused_) drawPause(ui, *online);
@@ -390,7 +398,9 @@ void OnlineRaceScreen::drawTags(Ui& ui, const net::Online& online)
 void OnlineRaceScreen::drawStandings(Ui& ui, const net::Online& online)
 {
     const std::vector<uint8_t> order = online.raceOrder();
-    const Rectangle panel{ui.px(20), ui.px(134), ui.px(280), ui.px(56.0f + 38.0f * static_cast<float>(order.size()))};
+    const Session& s = run_->session();
+    const float top = 134.0f + (s.hasNitro() ? 34.0f : 0.0f) + (s.vehicle().hasRollCage() ? 32.0f : 0.0f);
+    const Rectangle panel{ui.px(20), ui.px(top), ui.px(280), ui.px(56.0f + 38.0f * static_cast<float>(order.size()))};
     DrawRectangleRounded({panel.x - ui.px(3), panel.y - ui.px(3), panel.width + ui.px(6), panel.height + ui.px(6)}, 0.18f,
                          10, kInk);
     DrawRectangleRounded(panel, 0.18f, 10, {36, 42, 62, 225});

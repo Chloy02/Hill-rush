@@ -100,9 +100,9 @@ bool climbTest(const VehicleDef& vehicle, const UpgradeLevels& upgrades, float a
             const float lift = std::remainder(v.angle() - groundAngle, 6.2831853f) + v.angularVelocity() * 0.3f;
             const float gas = lift > 0.5f ? 0.0f : 1.0f;
             const float brake = lift > 0.85f ? 1.0f : 0.0f;
-            v.applyControls(gas, brake, true, kFixedDt);
+            v.applyControls(gas, brake, 0.0f, true, false, kFixedDt);
             b2World_Step(world, kFixedDt, kSubSteps);
-            v.updateContacts();
+            v.updateContacts(kFixedDt);
             if (v.position().x > rampLength + 2.0f && v.position().y > 13.0f) {
                 success = true;
                 break;

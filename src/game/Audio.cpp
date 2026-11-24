@@ -273,6 +273,91 @@ std::vector<float> makeDenied()
     return buf;
 }
 
+std::vector<float> makeRollCageHit()
+{
+    auto buf = render(0.38f);
+    Rng rng(15);
+    float hp = 0.0f;
+    float prev = 0.0f;
+    float thudPhase = 0.0f;
+    for (size_t i = 0; i < buf.size(); ++i) {
+        const float t = static_cast<float>(i) / kRate;
+        const float n = rng.range(-1.0f, 1.0f);
+        hp = 0.8f * (hp + n - prev);
+        prev = n;
+        thudPhase += (160.0f - 180.0f * std::fmin(t, 0.15f)) / kRate;
+        const float impact = 0.9f * hp * std::exp(-t * 85.0f) + 0.65f * std::sin(kTwoPi * thudPhase) * std::exp(-t * 28.0f);
+        const float ring = (sine(690.0f, t) + 0.75f * sine(1085.0f, t) + 0.55f * sine(1690.0f, t) +
+                            0.35f * sine(2440.0f, t) + 0.2f * sine(3270.0f, t)) *
+                           std::exp(-t * 15.0f);
+        buf[i] = impact + 0.45f * ring;
+    }
+    return buf;
+}
+
+std::vector<float> makeRollCageBreak()
+{
+    auto buf = render(0.65f);
+    Rng rng(16);
+    float lp = 0.0f;
+    float crunchPhase = 0.0f;
+    const float hits[] = {0.0f, 0.085f, 0.19f, 0.31f};
+    const float freqs[] = {980.0f, 760.0f, 610.0f, 470.0f};
+    for (size_t i = 0; i < buf.size(); ++i) {
+        const float t = static_cast<float>(i) / kRate;
+        const float n = rng.range(-1.0f, 1.0f);
+        lp += 0.32f * (n - lp);
+        crunchPhase += (130.0f - 95.0f * std::fmin(t, 0.4f)) / kRate;
+        float s = 1.1f * n * std::exp(-t * 42.0f) + 0.9f * lp * std::exp(-t * 10.0f) +
+                  0.85f * std::sin(kTwoPi * crunchPhase) * std::exp(-t * 12.0f);
+        for (int k = 0; k < 4; ++k) {
+            const float lt = t - hits[k];
+            if (lt < 0.0f) continue;
+            const float f = freqs[k] * (1.0f - 0.12f * std::fmin(lt, 0.25f));
+            const float amp = 0.42f * std::pow(0.75f, static_cast<float>(k));
+            s += amp * (sine(f, lt) + 0.7f * sine(f * 1.57f, lt) + 0.45f * sine(f * 2.41f, lt)) * std::exp(-lt * 20.0f);
+        }
+        buf[i] = s;
+    }
+    return buf;
+}
+
+std::vector<float> makeLuckyFuel()
+{
+    auto buf = render(0.62f);
+    const char* notes[] = {"G5", "B5", "D6", "G6", "B6"};
+    for (int k = 0; k < 5; ++k) {
+        const float start = 0.055f * static_cast<float>(k);
+        const float f = noteFreq(notes[k]);
+        const float tail = k == 4 ? 0.32f : 0.16f;
+        for (size_t i = static_cast<size_t>(start * kRate); i < buf.size(); ++i) {
+            const float t = static_cast<float>(i) / kRate - start;
+            const float wave = sine(f, t) + 0.4f * sine(2.0f * f, t) + 0.2f * sine(3.0f * f, t);
+            buf[i] += wave * decayEnv(t, 0.003f, tail);
+        }
+    }
+    return buf;
+}
+
+std::vector<float> makeWheelie()
+{
+    auto buf = render(0.38f);
+    const char* notes[] = {"G5", "D6"};
+    for (int k = 0; k < 2; ++k) {
+        const float start = 0.085f * static_cast<float>(k);
+        const float f = noteFreq(notes[k]);
+        float phase = 0.0f;
+        for (size_t i = static_cast<size_t>(start * kRate); i < buf.size(); ++i) {
+            const float t = static_cast<float>(i) / kRate - start;
+            const float pitchDip = 1.0f - 0.04f * std::exp(-t * 45.0f);
+            phase += f * pitchDip / kRate;
+            const float wave = std::sin(kTwoPi * phase) + 0.3f * std::sin(2.0f * kTwoPi * phase);
+            buf[i] += wave * decayEnv(t, 0.003f, k == 1 ? 0.18f : 0.11f);
+        }
+    }
+    return buf;
+}
+
 struct SfxRecipe {
     Sfx id;
     const char* name;
@@ -280,10 +365,21 @@ struct SfxRecipe {
 };
 
 const SfxRecipe kRecipes[] = {
-    {Sfx::Coin, "coin", 0.55f},       {Sfx::Fuel, "fuel", 0.6f},          {Sfx::Crash, "crash", 0.9f},
-    {Sfx::Land, "land", 0.8f},        {Sfx::Flip, "flip", 0.55f},         {Sfx::LowFuel, "lowfuel", 0.45f},
-    {Sfx::Click, "click", 0.5f},      {Sfx::Buy, "buy", 0.6f},            {Sfx::GameOver, "gameover", 0.55f},
-    {Sfx::Fanfare, "fanfare", 0.55f}, {Sfx::Denied, "denied", 0.35f},
+    {Sfx::Coin, "coin", 0.55f},
+    {Sfx::Fuel, "fuel", 0.6f},
+    {Sfx::Crash, "crash", 0.9f},
+    {Sfx::Land, "land", 0.8f},
+    {Sfx::Flip, "flip", 0.55f},
+    {Sfx::LowFuel, "lowfuel", 0.45f},
+    {Sfx::Click, "click", 0.5f},
+    {Sfx::Buy, "buy", 0.6f},
+    {Sfx::GameOver, "gameover", 0.55f},
+    {Sfx::Fanfare, "fanfare", 0.55f},
+    {Sfx::Denied, "denied", 0.35f},
+    {Sfx::RollCageHit, "rollcagehit", 0.7f},
+    {Sfx::RollCageBreak, "rollcagebreak", 0.85f},
+    {Sfx::LuckyFuel, "luckyfuel", 0.55f},
+    {Sfx::Wheelie, "wheelie", 0.55f},
 };
 
 std::vector<float> renderSfx(Sfx id)
@@ -300,6 +396,10 @@ std::vector<float> renderSfx(Sfx id)
     case Sfx::GameOver: return makeGameOver();
     case Sfx::Fanfare: return makeFanfare();
     case Sfx::Denied: return makeDenied();
+    case Sfx::RollCageHit: return makeRollCageHit();
+    case Sfx::RollCageBreak: return makeRollCageBreak();
+    case Sfx::LuckyFuel: return makeLuckyFuel();
+    case Sfx::Wheelie: return makeWheelie();
     case Sfx::Count: break;
     }
     return {};
@@ -432,6 +532,9 @@ struct EngineParams {
     std::atomic<float> rpm{0.0f};
     std::atomic<float> throttle{0.0f};
     std::atomic<float> volume{0.0f};
+    std::atomic<int> voice{static_cast<int>(EngineVoice::Standard)};
+    std::atomic<float> boost{0.0f};
+    std::atomic<float> thrust{0.0f};
 };
 EngineParams gEngine;
 
@@ -439,11 +542,22 @@ struct EngineState {
     float rpm = 0.0f;
     float throttle = 0.0f;
     float volume = 0.0f;
+    float boost = 0.0f;
+    float thrust = 0.0f;
     float phase = 0.0f;
     float halfPhase = 0.0f;
+    float turboPhase = 0.0f;
+    float elecPhase1 = 0.0f;
+    float elecPhase2 = 0.0f;
+    float shimmerPhase = 0.0f;
     float pulseAmp = 1.0f;
     float lp = 0.0f;
     float lp2 = 0.0f;
+    float thrustLp = 0.0f;
+    float thrustLp2 = 0.0f;
+    float thrustMid = 0.0f;
+    float nitroLp = 0.0f;
+    float nitroHpLp = 0.0f;
     float dcIn = 0.0f;
     float dcOut = 0.0f;
     std::vector<float> comb = std::vector<float>(512, 0.0f);
@@ -459,39 +573,121 @@ void engineCallback(void* bufferData, unsigned int frames)
     const float targetRpm = gEngine.rpm.load(std::memory_order_relaxed);
     const float targetThrottle = gEngine.throttle.load(std::memory_order_relaxed);
     const float targetVolume = gEngine.volume.load(std::memory_order_relaxed);
+    const auto voice = static_cast<EngineVoice>(gEngine.voice.load(std::memory_order_relaxed));
+    const float targetBoost = gEngine.boost.load(std::memory_order_relaxed);
+    const float targetThrust = gEngine.thrust.load(std::memory_order_relaxed);
     const size_t combDelay = static_cast<size_t>(kRate / 95);
+    const float thrustMidCoef = 1.0f - std::exp(-kTwoPi * 1650.0f / kRate);
+    const float nitroLpCoef = 1.0f - std::exp(-kTwoPi * 2600.0f / kRate);
+    const float nitroHpCoef = 1.0f - std::exp(-kTwoPi * 380.0f / kRate);
 
     for (unsigned int i = 0; i < frames; ++i) {
         e.rpm += (targetRpm - e.rpm) * 0.0012f;
         e.throttle += (targetThrottle - e.throttle) * 0.002f;
         e.volume += (targetVolume - e.volume) * 0.001f;
+        e.boost += (targetBoost - e.boost) * 0.0025f;
+        e.thrust += (targetThrust - e.thrust) * 0.0025f;
 
-        // Firing frequency of a small four-stroke: ~26 Hz at idle up to ~150 Hz.
-        const float freq = 26.0f + 124.0f * e.rpm;
-        e.phase += freq / kRate;
-        if (e.phase >= 1.0f) {
-            e.phase -= 1.0f;
-            e.pulseAmp = 1.0f + 0.08f * e.rng.range(-1.0f, 1.0f);
+        const float baseFreq = 26.0f + 124.0f * e.rpm;
+        const float baseCutoff = 220.0f + 600.0f * e.rpm + 2200.0f * e.throttle * e.rpm;
+
+        float y = 0.0f;
+        if (voice == EngineVoice::Electric) {
+            const float f1 = 140.0f + 380.0f * e.rpm;
+            const float f2 = f1 * 1.505f;
+            e.elecPhase1 += f1 / kRate;
+            if (e.elecPhase1 >= 1.0f) e.elecPhase1 -= 1.0f;
+            e.elecPhase2 += f2 / kRate;
+            if (e.elecPhase2 >= 1.0f) e.elecPhase2 -= 1.0f;
+            const float hum = 0.45f * std::sin(kTwoPi * e.elecPhase1) + 0.18f * std::sin(kTwoPi * e.elecPhase2) +
+                              0.015f * e.rng.range(-1.0f, 1.0f);
+            const float eCoef = 1.0f - std::exp(-kTwoPi * (900.0f + 1600.0f * e.rpm) / kRate);
+            e.lp += eCoef * (hum - e.lp);
+            y = e.lp;
+        } else {
+            float freqMul = 1.0f;
+            float pulseDecay = 7.0f;
+            float pulseGain = 1.0f;
+            float subGain = 0.35f;
+            float secondGain = 0.12f;
+            float thirdGain = 0.0f;
+            float noiseScale = 1.0f;
+            float cutoff = baseCutoff;
+
+            switch (voice) {
+            case EngineVoice::TwoStroke:
+                freqMul = 1.75f;
+                pulseDecay = 11.5f;
+                subGain = 0.16f;
+                secondGain = 0.28f;
+                thirdGain = 0.12f;
+                cutoff = baseCutoff * 1.6f + 260.0f;
+                break;
+            case EngineVoice::Diesel:
+                freqMul = 0.62f;
+                pulseDecay = 5.5f;
+                subGain = 0.6f;
+                secondGain = 0.10f;
+                noiseScale = 1.15f;
+                cutoff = baseCutoff * 0.68f;
+                break;
+            case EngineVoice::Race:
+                freqMul = 1.85f;
+                pulseDecay = 8.5f;
+                pulseGain = 0.85f;
+                subGain = 0.22f;
+                secondGain = 0.38f;
+                thirdGain = 0.24f;
+                cutoff = baseCutoff * 1.7f + 220.0f;
+                break;
+            case EngineVoice::Rally:
+                freqMul = 1.15f;
+                pulseDecay = 7.8f;
+                subGain = 0.48f;
+                secondGain = 0.24f;
+                thirdGain = 0.10f;
+                cutoff = baseCutoff * 1.25f;
+                break;
+            case EngineVoice::Standard:
+            case EngineVoice::Electric:
+                break;
+            }
+
+            // Firing frequency adjusted per vehicle voice.
+            const float freq = baseFreq * freqMul;
+            e.phase += freq / kRate;
+            if (e.phase >= 1.0f) {
+                e.phase -= 1.0f;
+                e.pulseAmp = 1.0f + 0.08f * e.rng.range(-1.0f, 1.0f);
+            }
+            e.halfPhase += 0.5f * freq / kRate;
+            if (e.halfPhase >= 1.0f) e.halfPhase -= 1.0f;
+
+            const float pulse = e.pulseAmp * std::exp(-pulseDecay * e.phase);
+            float s = pulseGain * pulse + subGain * std::sin(kTwoPi * e.halfPhase) +
+                      secondGain * std::sin(2.0f * kTwoPi * e.phase);
+            if (thirdGain > 0.0f) s += thirdGain * std::sin(3.0f * kTwoPi * e.phase);
+            s += e.rng.range(-1.0f, 1.0f) * (0.05f + 0.3f * e.throttle) * noiseScale * pulse;
+
+            // Two one-pole low-passes whose cutoff opens with throttle and revs.
+            const float a = 1.0f - std::exp(-kTwoPi * cutoff / kRate);
+            e.lp += a * (s - e.lp);
+            e.lp2 += a * (e.lp - e.lp2);
+            y = e.lp2;
+
+            // Short comb: a hint of exhaust resonance.
+            const float delayed = e.comb[(e.combPos + e.comb.size() - combDelay) % e.comb.size()];
+            y += 0.4f * delayed;
+            e.comb[e.combPos] = y;
+            e.combPos = (e.combPos + 1) % e.comb.size();
+
+            if (voice == EngineVoice::Rally && e.throttle > 0.5f) {
+                const float spool = clampf((e.throttle - 0.5f) * 2.0f, 0.0f, 1.0f);
+                e.turboPhase += (1600.0f + 1800.0f * e.rpm) / kRate;
+                if (e.turboPhase >= 1.0f) e.turboPhase -= 1.0f;
+                y += 0.09f * spool * std::sin(kTwoPi * e.turboPhase);
+            }
         }
-        e.halfPhase += 0.5f * freq / kRate;
-        if (e.halfPhase >= 1.0f) e.halfPhase -= 1.0f;
-
-        const float pulse = e.pulseAmp * std::exp(-7.0f * e.phase);
-        float s = pulse + 0.35f * std::sin(kTwoPi * e.halfPhase) + 0.12f * std::sin(2.0f * kTwoPi * e.phase);
-        s += e.rng.range(-1.0f, 1.0f) * (0.05f + 0.3f * e.throttle) * pulse;
-
-        // Two one-pole low-passes whose cutoff opens with throttle and revs.
-        const float cutoff = 220.0f + 600.0f * e.rpm + 2200.0f * e.throttle * e.rpm;
-        const float a = 1.0f - std::exp(-kTwoPi * cutoff / kRate);
-        e.lp += a * (s - e.lp);
-        e.lp2 += a * (e.lp - e.lp2);
-        float y = e.lp2;
-
-        // Short comb: a hint of exhaust resonance.
-        const float delayed = e.comb[(e.combPos + e.comb.size() - combDelay) % e.comb.size()];
-        y += 0.4f * delayed;
-        e.comb[e.combPos] = y;
-        e.combPos = (e.combPos + 1) % e.comb.size();
 
         // DC blocker: the firing pulses are all positive, which would otherwise
         // waste headroom and pop when the engine starts or stops.
@@ -499,11 +695,43 @@ void engineCallback(void* bufferData, unsigned int frames)
         e.dcIn = y;
         e.dcOut = hp;
 
-        out[i] = std::tanh(1.6f * hp) * 0.42f * e.volume;
+        float fx = 0.0f;
+        if (e.thrust > 0.01f) {
+            const float n = e.rng.range(-1.0f, 1.0f);
+            const float tCoef = 1.0f - std::exp(-kTwoPi * (420.0f + 240.0f * e.rpm) / kRate);
+            e.thrustLp += tCoef * (n - e.thrustLp);
+            e.thrustLp2 += tCoef * (e.thrustLp - e.thrustLp2);
+            e.thrustMid += thrustMidCoef * (n - e.thrustMid);
+            const float roar = 1.7f * e.thrustLp2 + 0.38f * e.thrustMid;
+            fx += roar * e.thrust;
+        }
+        if (e.boost > 0.01f) {
+            const float n = e.rng.range(-1.0f, 1.0f);
+            e.nitroLp += nitroLpCoef * (n - e.nitroLp);
+            e.nitroHpLp += nitroHpCoef * (e.nitroLp - e.nitroHpLp);
+            const float whoosh = (e.nitroLp - e.nitroHpLp) * 1.5f;
+            e.shimmerPhase += (820.0f + 980.0f * e.rpm + 320.0f * e.boost) / kRate;
+            if (e.shimmerPhase >= 1.0f) e.shimmerPhase -= 1.0f;
+            const float shimmer = 0.16f * std::sin(kTwoPi * e.shimmerPhase) +
+                                  0.09f * std::sin(1.5f * kTwoPi * e.shimmerPhase);
+            fx += (whoosh + shimmer) * e.boost;
+        }
+
+        out[i] = std::tanh(1.6f * hp + 1.25f * fx) * 0.42f * e.volume;
     }
 }
 
 } // namespace
+
+EngineVoice engineVoiceFor(const std::string& vehicleId)
+{
+    if (vehicleId == "bike") return EngineVoice::TwoStroke;
+    if (vehicleId == "tractor" || vehicleId == "monster" || vehicleId == "tank") return EngineVoice::Diesel;
+    if (vehicleId == "racecar") return EngineVoice::Race;
+    if (vehicleId == "moonlander") return EngineVoice::Electric;
+    if (vehicleId == "rally") return EngineVoice::Rally;
+    return EngineVoice::Standard;
+}
 
 bool Audio::init(bool muted)
 {
@@ -574,11 +802,17 @@ void Audio::play(Sfx sfx, float pitch, float volume)
     PlaySound(s);
 }
 
-void Audio::setEngine(bool running, float rpm, float throttle)
+void Audio::setEngine(bool running, float rpm, float throttle, EngineVoice voice, float boost, bool thrusting)
 {
     gEngine.rpm.store(clampf(rpm, 0.0f, 1.2f), std::memory_order_relaxed);
     gEngine.throttle.store(clampf(throttle, 0.0f, 1.0f), std::memory_order_relaxed);
-    gEngine.volume.store(running ? (0.55f + 0.3f * throttle) * sfxVolume_ : 0.0f, std::memory_order_relaxed);
+    gEngine.voice.store(static_cast<int>(voice), std::memory_order_relaxed);
+    gEngine.boost.store(running ? clampf(boost, 0.0f, 1.0f) : 0.0f, std::memory_order_relaxed);
+    gEngine.thrust.store(running && thrusting ? 1.0f : 0.0f, std::memory_order_relaxed);
+    const float baseVol = 0.55f + 0.3f * clampf(throttle, 0.0f, 1.0f);
+    const float activeBoost = running ? std::fmax(clampf(boost, 0.0f, 1.0f), thrusting ? 1.0f : 0.0f) : 0.0f;
+    const float vol = activeBoost > 0.0f ? std::fmax(baseVol, 0.75f + 0.15f * activeBoost) : baseVol;
+    gEngine.volume.store(running ? vol * sfxVolume_ : 0.0f, std::memory_order_relaxed);
 }
 
 void Audio::setMusicOn(bool on)
@@ -625,6 +859,9 @@ bool exportAudio(const std::string& dir)
         gEngine.rpm.store(pt[0]);
         gEngine.throttle.store(pt[1]);
         gEngine.volume.store(0.8f);
+        gEngine.voice.store(static_cast<int>(EngineVoice::Standard));
+        gEngine.boost.store(0.0f);
+        gEngine.thrust.store(0.0f);
         gState.rpm = pt[0];
         gState.throttle = pt[1];
         gState.volume = 0.8f;

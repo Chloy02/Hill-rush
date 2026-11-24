@@ -18,6 +18,10 @@ struct VehiclePose {
     std::vector<b2Transform> wheels;
     b2Transform head{};
     bool crashed = false;
+    bool rollCageBroken = false;
+    int rollCageDamage = 0;
+    bool thrusting = false;
+    bool boosting = false;
 };
 
 VehiclePose restPose(const VehicleDef& def, b2Vec2 position, float angle);

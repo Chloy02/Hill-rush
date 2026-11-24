@@ -81,8 +81,8 @@ public:
         if (ui.button("quit", ui.centered(205, 228, 190, 60), "QUIT", ButtonKind::Back)) app_.quit();
 
         drawCoinBalance(app_);
-        ui.text("Gas: Right / D      Brake: Left / A      Pause: Esc", {ui.px(20), ui.height() - ui.px(40)}, ui.px(22),
-                WHITE, Align::Left);
+        ui.text("Gas: Right / D      Brake: Left / A      Space: Boost/Thrust      Pause: Esc",
+                {ui.px(20), ui.height() - ui.px(40)}, ui.px(22), WHITE, Align::Left);
         char version[32];
         std::snprintf(version, sizeof(version), "v%s", kVersion);
         ui.text(version, {ui.width() - ui.px(20), ui.height() - ui.px(40)}, ui.px(22), WHITE, Align::Right);

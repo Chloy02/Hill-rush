@@ -38,6 +38,7 @@ runs on Ubuntu 20.04+, Debian 10+, Fedora, Arch, openSUSE and friends.
 |---|---|---|---|
 | Gas | Right / D | A, right trigger | GAS pedal |
 | Brake / reverse | Left / A | X, left trigger | BRAKE pedal |
+| Nitro boost / Thrusters | Space / W / Up | Y | NITRO / THRUST pedal |
 | Pause | Esc / P | Start | pause button |
 | Restart run | R | Back | |
 | Fullscreen | F11 / Alt+Enter | | |
@@ -123,8 +124,13 @@ If a room doesn't show up or you can't join:
   apart the further you go.
 * If the driver's head touches the ground it's **Driver Down**.
 * Coins come in clusters every 30 m and are worth more the further you get.
-* Bonuses: air time (from 2 s), **FLIP** / **BACK FLIP** (+1000 each) and a
-  one-time **NECK FLIP** (+2500).
+* Bonuses: air time (from 2 s), wheelies (from 2 s), **FLIP** / **BACK FLIP**
+  (+1000 each), **CLEAN LANDING** (+500 per flip), **LUCKY FUEL** (+1000 when
+  refuelling while coasting on empty), and a one-time **NECK FLIP** (+2500).
+* Stunts and coins charge the **Nitro Boost** bar (`Space` / `W` / `Up`) on
+  standard vehicles; on the **Moonlander**, `Space` fires downward **Rocket
+  Thrusters** (burning extra fuel). The **Rally Car** has a breakable **Roll
+  Cage** that absorbs roof impacts before snapping off.
 * Every stage has level checkpoints (every 200 m on Countryside) that pay a
   one-time reward.
 * Upgrades cost `level² × 1000` coins (more for some parts).

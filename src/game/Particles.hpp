@@ -52,7 +52,10 @@ public:
 
     // Effects ---------------------------------------------------------------
     void dust(b2Vec2 at, b2Vec2 direction, Color color, float strength);
+    void mudSplash(b2Vec2 at, b2Vec2 direction, float strength);
     void exhaust(b2Vec2 at, b2Vec2 direction, float throttle);
+    void flame(b2Vec2 at, b2Vec2 direction, Color core, Color outer, float speed = 7.0f);
+    void sparks(b2Vec2 at, int count, float speed = 7.5f);
     void sparkle(b2Vec2 at, Color color, int count);
     void burst(b2Vec2 at, Color color, int count, float speed);
     void dizzyStars(b2Vec2 at);

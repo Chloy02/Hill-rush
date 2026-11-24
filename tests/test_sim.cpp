@@ -4,6 +4,7 @@
 #include "core/Noise.hpp"
 #include "sim/Defs.hpp"
 #include "sim/Pickups.hpp"
+#include "sim/Pose.hpp"
 #include "sim/Progress.hpp"
 #include "sim/Session.hpp"
 #include "sim/SimHarness.hpp"
@@ -166,6 +167,13 @@ TEST("upgrade costs grow as L squared and tuning improves")
         CHECK(top.motorTorque > base.motorTorque);
         CHECK(top.tireFriction > base.tireFriction);
         CHECK(top.maxWheelSpeed > base.maxWheelSpeed);
+        if (v.hasThrusters()) {
+            CHECK(top.thrusterAccel > base.thrusterAccel);
+            CHECK(top.thrusterFuelRate < base.thrusterFuelRate);
+        }
+        if (v.hasRollCage()) {
+            CHECK(top.rollCageHits == base.rollCageHits + 3);
+        }
     }
 }
 
@@ -438,4 +446,252 @@ TEST("hard mode pays more per level and drains fuel faster")
     CHECK(hard.fuel() < easy.fuel());
     CHECK_NEAR(easy.fuel(), 1.0 - 20.0 / 40.0, 0.02);
     CHECK_NEAR(hard.fuel(), 1.0 - 20.0 / (40.0 * difficultyDef(Difficulty::Hard).fuelTankScale), 0.02);
+}
+
+TEST("moonlander thrusters lift against gravity and burn extra fuel")
+{
+    const StageDef& countryside = *findStage("countryside");
+    const VehicleDef& lander = *findVehicle("moonlander");
+    CHECK(lander.hasThrusters());
+    CHECK(!lander.hasRollCage());
+
+    Session s(countryside, lander, kStockLevels, 0.0f);
+    CHECK(s.hasThrusters());
+    CHECK(!s.hasNitro());
+    runFor(s, 30);
+    const float startY = s.vehicle().position().y;
+    const float fuelBefore = s.fuel();
+
+    runFor(s, 60 * 2, {0.0f, 0.0f, 1.0f});
+    CHECK(s.thrusting());
+    CHECK(!s.boosting());
+    CHECK(poseOf(s).thrusting);
+    CHECK(s.vehicle().position().y > startY + 2.0f);
+    // 2 seconds at (1 + 2.5)x fuel rate = 7s / 48s (~0.1458).
+    CHECK(fuelBefore - s.fuel() > 0.12f);
+}
+
+TEST("nitro boosts forward, drains gauge, and recharges from flips")
+{
+    const StageDef& countryside = *findStage("countryside");
+    const VehicleDef& rally = *findVehicle("rally");
+    Session s(countryside, rally, kStockLevels, 0.0f);
+    CHECK(s.hasNitro());
+    CHECK(!s.hasThrusters());
+    CHECK_NEAR(s.nitro(), 0.35, 1e-4);
+
+    runFor(s, 20);
+    s.step({0.0f, 0.0f, 1.0f});
+    CHECK(s.boosting());
+    CHECK(poseOf(s).boosting);
+    // Drain the starting 0.35 gauge (~0.64 s at 0.55/s).
+    runFor(s, 60, {0.0f, 0.0f, 1.0f});
+    CHECK_NEAR(s.nitro(), 0.0, 1e-4);
+    CHECK(!s.boosting());
+    CHECK(s.distance() > 4.0f);
+
+    // Doing a flip in the air recharges nitro and awards a clean landing.
+    s.vehicleForTesting().rigidMove(0.0f, {0.0f, 22.0f});
+    std::vector<GameEvent> events;
+    bool landed = false;
+    for (int i = 0; i < 60 * 6 && !s.isOver(); ++i) {
+        InputState in;
+        const float angle = wrapAngle(s.vehicle().angle());
+        const float spin = s.vehicle().angularVelocity();
+        if (s.result().backFlips == 0) {
+            in.gas = 1.0f;
+        } else {
+            const float err = angle + spin * 0.25f;
+            if (err > 0.06f) in.brake = 1.0f;
+            else if (err < -0.06f) in.gas = 1.0f;
+        }
+        s.step(in);
+        events.insert(events.end(), s.events().begin(), s.events().end());
+        s.events().clear();
+        if (countEvents(events, EventType::Landing) >= 1) {
+            landed = true;
+            break;
+        }
+    }
+    CHECK(landed);
+    CHECK(s.result().backFlips >= 1);
+    CHECK(s.nitro() >= 0.40f);
+    CHECK(countEvents(events, EventType::CleanLanding) >= 1);
+    CHECK(s.result().cleanLandings >= 1);
+}
+
+TEST("rally car roll cage absorbs hits before breaking")
+{
+    const StageDef& countryside = *findStage("countryside");
+    const VehicleDef& rally = *findVehicle("rally");
+    CHECK(rally.hasRollCage());
+    CHECK(rally.rollCageHits == 2);
+
+    Session s(countryside, rally, kStockLevels, 0.0f);
+    CHECK(s.vehicle().hasRollCage());
+    CHECK(s.vehicle().rollCageMaxHits() == 2);
+    CHECK(s.vehicle().rollCageHitsLeft() == 2);
+    CHECK(s.vehicle().rollCageIntact());
+
+    // First roof drop: absorbed, vehicle survives.
+    runFor(s, 20);
+    s.vehicleForTesting().rigidMove(kPi, {0.0f, 2.5f});
+    auto events = runFor(s, 75);
+    CHECK(countEvents(events, EventType::RollCageHit) == 1);
+    CHECK(countEvents(events, EventType::Crash) == 0);
+    CHECK(s.vehicle().rollCageHitsLeft() == 1);
+    CHECK(s.vehicle().rollCageIntact());
+    CHECK(poseOf(s).rollCageDamage == 1);
+    CHECK(!poseOf(s).rollCageBroken);
+
+    // Second roof drop after cooldown: breaks the cage on impact without instant crash.
+    s.vehicleForTesting().rigidMove(0.0f, {0.0f, 2.5f});
+    std::vector<GameEvent> breakEvents;
+    for (int i = 0; i < 90 && !s.isOver(); ++i) {
+        s.step({});
+        breakEvents.insert(breakEvents.end(), s.events().begin(), s.events().end());
+        s.events().clear();
+        if (countEvents(breakEvents, EventType::RollCageBreak) >= 1) break;
+    }
+    CHECK(countEvents(breakEvents, EventType::RollCageBreak) == 1);
+    CHECK(countEvents(breakEvents, EventType::Crash) == 0);
+    CHECK(s.vehicle().rollCageHitsLeft() == 0);
+    CHECK(!s.vehicle().rollCageIntact());
+    CHECK(poseOf(s).rollCageBroken);
+    CHECK(poseOf(s).rollCageDamage == 2);
+
+    // Remaining on the roof with the cage broken crashes Driver Down.
+    events = runFor(s, 60 * 6);
+    CHECK(countEvents(events, EventType::Crash) == 1);
+    CHECK(s.isOver());
+    CHECK(s.result().reason == EndReason::DriverDown);
+}
+
+TEST("cave ceiling never pinches and blocks upward thrust")
+{
+    const StageDef& cave = *findStage("cave");
+    TerrainGenerator gen(cave);
+    CHECK(gen.hasCeiling());
+    for (float x = -10.0f; x < 4000.0f; x += 0.5f) {
+        float localMax = gen.height(x);
+        for (float dx = -2.5f; dx <= 2.5f; dx += 0.5f) localMax = std::fmax(localMax, gen.height(x + dx));
+        CHECK(gen.ceilingHeight(x) >= localMax + cave.ceilingMin - 1e-4f);
+    }
+
+    // Moonlander flying straight up hits the ceiling rather than soaring into space.
+    const VehicleDef& lander = *findVehicle("moonlander");
+    Session s(cave, lander, kStockLevels, 0.0f);
+    runFor(s, 180, {0.3f, 0.0f, 1.0f});
+    const float ceilY = s.terrain().ceilingHeight(s.vehicle().position().x);
+    CHECK(s.vehicle().position().y < ceilY + 0.5f);
+}
+
+TEST("forest mud pits, plank bridges and pickups behave cleanly")
+{
+    const StageDef& forest = *findStage("forest");
+    TerrainGenerator gen(forest);
+    bool sawMud = false;
+    for (float x = 85.0f; x < 1000.0f; x += 1.0f) {
+        if (gen.isMud(x)) {
+            sawMud = true;
+            CHECK_NEAR(gen.friction(x), forest.mudFriction, 1e-4);
+            CHECK_NEAR(gen.rollingResistance(x), forest.mudRollingResistance, 1e-4);
+        }
+    }
+    CHECK(sawMud);
+
+    const VehicleDef& tank = *findVehicle("tank");
+    Session s(forest, tank, kStockLevels, 0.0f);
+    // Load around the first bridge at x = 160..172.
+    s.vehicleForTesting().rigidMove(0.0f, {150.0f, 2.0f});
+    s.step({});
+    bool foundBridge = false;
+    for (const auto& [chunk, list] : s.terrain().bridges()) {
+        (void)chunk;
+        for (const auto& b : list) {
+            if (std::fabs(b.x0 - TerrainGenerator::kBridgeFirst) < 1.0f) {
+                foundBridge = true;
+                CHECK(b.planks.size() == 8);
+            }
+        }
+    }
+    CHECK(foundBridge);
+
+    // Pickups over the bridge sit on top of the bridge deck, not down in the creek.
+    s.pickups().forEachVisible(160.0f, 172.0f, [&](const Pickup& p) {
+        CHECK(p.pos.y >= s.terrain().bridgeDeckHeight(p.pos.x));
+    });
+}
+
+TEST("wheelie bonus table and lucky fuel rescue work")
+{
+    CHECK(wheelieBonus(1.99f) == 0);
+    CHECK(wheelieBonus(2.0f) == 100);
+    CHECK(wheelieBonus(2.26f) == 150);
+    CHECK(wheelieBonus(3.0f) == 300);
+    CHECK(wheelieBonus(100.0f) == 5000);
+    CHECK(std::string(wheelieLabel(wheelieStep(2.1f))) == "WHEELIE");
+    CHECK(std::string(wheelieLabel(wheelieStep(3.1f))) == "SUPER WHEELIE");
+    CHECK(std::string(wheelieLabel(wheelieStep(4.1f))) == "INSANE WHEELIE");
+
+    // Actual physics wheelie on Moon's flat start pad (lower gravity lets groundTilt hold the nose up at steady speed).
+    {
+        const StageDef& moon = *findStage("moon");
+        const VehicleDef& bike = *findVehicle("bike");
+        Session s(moon, bike, kStockLevels, 0.0f);
+        s.vehicleForTesting().rigidMove(0.45f, {-12.0f, 0.05f});
+        runFor(s, 15, {1.0f, 0.0f});
+        std::vector<GameEvent> events;
+        bool sawWheeling = false;
+        for (int i = 0; i < 60 * 5 && !s.isOver(); ++i) {
+            const float err = wrapAngle(s.vehicle().angle() - 0.55f) + s.vehicle().angularVelocity() * 0.25f;
+            InputState in;
+            if (err < 0.0f) in.gas = clampf(-err * 4.0f + 0.25f, 0.25f, 1.0f);
+            else in.brake = clampf(err * 2.5f, 0.0f, 0.4f);
+            s.step(in);
+            if (s.wheeling()) sawWheeling = true;
+            events.insert(events.end(), s.events().begin(), s.events().end());
+            s.events().clear();
+            if (s.vehicle().position().x > 16.0f) break;
+        }
+        // Settle front wheel back down so the wheelie pays out.
+        auto endEvents = runFor(s, 30, {0.0f, 0.6f});
+        events.insert(events.end(), endEvents.begin(), endEvents.end());
+        CHECK(sawWheeling);
+        CHECK(countEvents(events, EventType::Wheelie) >= 1);
+        CHECK(s.result().wheelies >= 1);
+        CHECK(s.result().bonusCoins >= 100);
+    }
+
+    // Lucky fuel: run out of fuel just short of the first fuel can at x = 90m and coast into it.
+    const StageDef& countryside = *findStage("countryside");
+    const VehicleDef& jeep = *findVehicle("jeep");
+    const float firstFuelX = Pickups::fuelPosition(countryside, 0);
+    Session s2(countryside, jeep, kStockLevels, 0.0f);
+    runFor(s2, static_cast<int>(38.5f / kFixedDt));
+    const float startAt = firstFuelX - 15.0f;
+    s2.vehicleForTesting().rigidMove(0.0f, {startAt, s2.terrain().surfaceHeight(startAt) + 0.5f});
+    const auto ev2 = runFor(s2, 60 * 6, {1.0f, 0.0f});
+    CHECK(countEvents(ev2, EventType::OutOfFuel) >= 1);
+    CHECK(countEvents(ev2, EventType::Fuel) >= 1);
+    CHECK(countEvents(ev2, EventType::LuckyFuel) == 1);
+    CHECK(s2.state() == RunState::Running);
+    CHECK(s2.result().luckyFuels == 1);
+    CHECK(s2.result().bonusCoins >= Session::kLuckyFuelBonus);
+}
+
+TEST("new vehicles perform finite bot runs across new and classic stages")
+{
+    for (const char* veh : {"moonlander", "rally", "tank"}) {
+        for (const char* stg : {"countryside", "forest", "cave", "moon"}) {
+            SimOptions o;
+            o.stage = stg;
+            o.vehicle = veh;
+            o.maxSeconds = 90.0f;
+            const SimReport r = runHeadless(o);
+            std::fprintf(stderr, "  %s\n", toJson(o, r).c_str());
+            CHECK(r.finite);
+            CHECK(r.result.distance > 100.0f);
+        }
+    }
 }

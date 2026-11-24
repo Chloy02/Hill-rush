@@ -58,6 +58,31 @@ std::vector<StageDef> makeStages()
     }
     {
         StageDef s;
+        s.id = "forest";
+        s.name = "Muddy Forest";
+        s.blurb = "Deep mud pits and creaking plank bridges. Keep your momentum up!";
+        s.price = 60000;
+        s.gravity = 9.8f;
+        s.groundFriction = 0.95f;
+        s.seed = 0xF04E57u;
+        s.rampDistance = 2200.0f;
+        s.octaves = {{{145.0f, 8.5f, 19.0f}, {40.0f, 4.0f, 9.5f}, {11.0f, 0.35f, 1.0f}}};
+        s.steepStart = 1.0f;
+        s.steepEnd = 1.45f;
+        s.feature = TerrainFeature::MudPits;
+        s.mudFriction = 0.65f;
+        s.mudRollingResistance = 0.24f;
+        s.maxSlopeStart = 33.0f;
+        s.maxSlopeEnd = 45.0f;
+        s.fuelFirst = 90.0f;
+        s.fuelGap = 90.0f;
+        s.fuelGapGrowth = 3.0f;
+        s.coinRate = 1.45f;
+        s.levelSpacing = 200.0f;
+        list.push_back(s);
+    }
+    {
+        StageDef s;
         s.id = "arctic";
         s.name = "Arctic";
         s.blurb = "Snowy hills with treacherous patches of sheer ice.";
@@ -77,6 +102,31 @@ std::vector<StageDef> makeStages()
         s.fuelGap = 90.0f;
         s.fuelGapGrowth = 3.0f;
         s.coinRate = 1.9f;
+        s.levelSpacing = 200.0f;
+        list.push_back(s);
+    }
+    {
+        StageDef s;
+        s.id = "cave";
+        s.name = "Cave";
+        s.blurb = "Low ceilings and hanging stalactites. Watch your head on big jumps!";
+        s.price = 100000;
+        s.gravity = 9.8f;
+        s.groundFriction = 1.0f;
+        s.seed = 0xCA7E01u;
+        s.rampDistance = 2400.0f;
+        s.octaves = {{{140.0f, 7.0f, 16.0f}, {38.0f, 3.5f, 8.0f}, {10.0f, 0.35f, 1.0f}}};
+        s.steepStart = 1.0f;
+        s.steepEnd = 1.5f;
+        s.maxSlopeStart = 32.0f;
+        s.maxSlopeEnd = 44.0f;
+        s.feature = TerrainFeature::CaveCeiling;
+        s.ceilingBase = 8.4f;
+        s.ceilingMin = 5.0f;
+        s.fuelFirst = 90.0f;
+        s.fuelGap = 90.0f;
+        s.fuelGapGrowth = 2.5f;
+        s.coinRate = 1.75f;
         s.levelSpacing = 200.0f;
         list.push_back(s);
     }
@@ -308,6 +358,94 @@ std::vector<VehicleDef> makeVehicles()
     }
     {
         VehicleDef v;
+        v.id = "moonlander";
+        v.name = "Moonlander";
+        v.blurb = "Lunar pod with rocket thrusters. Hold SPACE to fly - watch your fuel!";
+        v.price = 150000;
+        v.chassis = {
+            // lower landing frame
+            {{{-1.15f, -0.18f}, {1.15f, -0.18f}, {1.02f, 0.02f}, {-1.02f, 0.02f}}, 70.0f},
+            // hexagonal lunar pod body
+            {{{-0.78f, 0.02f}, {0.78f, 0.02f}, {0.92f, 0.28f}, {0.58f, 0.58f}, {-0.58f, 0.58f}, {-0.92f, 0.28f}}, 85.0f},
+        };
+        v.wheels = {
+            {{-1.12f, -0.42f}, 0.34f, 34.0f, true},
+            {{0.0f, -0.42f}, 0.34f, 34.0f, true},
+            {{1.12f, -0.42f}, 0.34f, 34.0f, true},
+        };
+        v.neckAnchor = {0.0f, 0.56f};
+        v.headRadius = 0.25f;
+        v.headLift = 0.24f;
+        v.motorTorque = 420.0f;
+        v.engineTorqueGain = 1.8f;
+        v.maxWheelSpeed = 34.0f;
+        v.reverseWheelSpeed = 14.0f;
+        v.brakeTorque = 900.0f;
+        v.suspHertz = 3.8f;
+        v.suspDamping = 0.65f;
+        v.suspTravelDown = 0.24f;
+        v.suspTravelUp = 0.16f;
+        v.tireFriction = 1.05f;
+        v.airAccel = 5.4f;
+        v.airMaxSpin = 4.2f;
+        v.fuelSeconds = 48.0f;
+        v.thrusterAccel = 13.8f;
+        v.thrusterFuelRate = 2.5f;
+        v.thrusterGain = 1.55f;
+        v.nitroAccel = 0.0f;
+        v.upgrades = {slot(UpgradeKind::Engine, 12), slot(UpgradeKind::Suspension, 14),
+                      slot(UpgradeKind::Tires, 14), slot(UpgradeKind::Thrusters, 12, 2000)};
+        list.push_back(v);
+    }
+    {
+        VehicleDef v;
+        v.id = "rally";
+        v.name = "Rally Car";
+        v.blurb = "Fast 4WD hatchback with a steel roll cage that absorbs bad landings.";
+        v.price = 175000;
+        v.chassis = {
+            // sporty hatchback lower body
+            {{{-1.60f, -0.16f}, {1.58f, -0.16f}, {1.66f, 0.04f}, {1.54f, 0.22f}, {-1.60f, 0.22f}}, 115.0f},
+            // front hood
+            {{{0.28f, 0.22f}, {1.54f, 0.22f}, {1.38f, 0.36f}, {0.38f, 0.38f}}, 85.0f},
+            // rear pillar
+            {{{-1.56f, 0.22f}, {-0.96f, 0.22f}, {-0.82f, 0.88f}, {-1.16f, 0.88f}}, 45.0f},
+        };
+        v.rollCage = {
+            // roof arch spanning above the driver's head
+            {{{-0.82f, 0.92f}, {0.42f, 0.92f}, {0.28f, 1.06f}, {-0.78f, 1.06f}}, 18.0f},
+            // front A-pillar brace
+            {{{0.30f, 0.36f}, {0.44f, 0.36f}, {0.42f, 0.94f}, {0.28f, 0.94f}}, 12.0f},
+        };
+        v.rollCageHits = 2;
+        v.wheels = {
+            {{-1.12f, -0.34f}, 0.40f, 52.0f, true},
+            {{1.14f, -0.34f}, 0.40f, 52.0f, false},
+        };
+        v.neckAnchor = {-0.18f, 0.46f};
+        v.headRadius = 0.24f;
+        v.headLift = 0.24f;
+        v.motorTorque = 620.0f;
+        v.engineTorqueGain = 1.85f;
+        v.maxWheelSpeed = 54.0f;
+        v.reverseWheelSpeed = 18.0f;
+        v.brakeTorque = 1300.0f;
+        v.frontDriveShare = 0.45f;
+        v.suspHertz = 5.2f;
+        v.suspDamping = 0.72f;
+        v.suspTravelDown = 0.22f;
+        v.suspTravelUp = 0.14f;
+        v.tireFriction = 1.15f;
+        v.airAccel = 5.2f;
+        v.airMaxSpin = 4.4f;
+        v.fuelSeconds = 45.0f;
+        v.nitroAccel = 13.5f;
+        v.upgrades = {slot(UpgradeKind::Engine, 14, 1500), slot(UpgradeKind::Suspension, 15),
+                      slot(UpgradeKind::Tires, 16), slot(UpgradeKind::RollCage, 10, 2000)};
+        list.push_back(v);
+    }
+    {
+        VehicleDef v;
         v.id = "racecar";
         v.name = "Race Car";
         v.blurb = "Blistering speed and low-slung grip. Hates bumps.";
@@ -340,6 +478,48 @@ std::vector<VehicleDef> makeVehicles()
         v.downforce = 0.0f;
         v.upgrades = {slot(UpgradeKind::Engine, 12, 1500), slot(UpgradeKind::Suspension, 14),
                       slot(UpgradeKind::Tires, 16), slot(UpgradeKind::Downforce, 10, 3000)};
+        list.push_back(v);
+    }
+    {
+        VehicleDef v;
+        v.id = "tank";
+        v.name = "Tank";
+        v.blurb = "Six-wheel tracked beast. Heavy, steady and climbs almost anything.";
+        v.price = 300000;
+        v.chassis = {
+            // armored lower hull
+            {{{-1.55f, -0.18f}, {1.55f, -0.18f}, {1.62f, 0.08f}, {1.50f, 0.34f}, {-1.55f, 0.34f}}, 115.0f},
+            // compact turret
+            {{{-0.85f, 0.34f}, {0.50f, 0.34f}, {0.38f, 0.72f}, {-0.75f, 0.72f}}, 45.0f},
+        };
+        v.wheels = {
+            {{-1.30f, -0.34f}, 0.28f, 42.0f, true},
+            {{-0.78f, -0.34f}, 0.28f, 42.0f, true},
+            {{-0.26f, -0.34f}, 0.28f, 42.0f, true},
+            {{0.26f, -0.34f}, 0.28f, 42.0f, true},
+            {{0.78f, -0.34f}, 0.28f, 42.0f, true},
+            {{1.30f, -0.34f}, 0.28f, 42.0f, true},
+        };
+        v.neckAnchor = {-0.15f, 0.72f};
+        v.headRadius = 0.24f;
+        v.headLift = 0.24f;
+        v.motorTorque = 1450.0f;
+        v.engineTorqueGain = 1.6f;
+        v.engineSpeedGain = 1.65f;
+        v.maxWheelSpeed = 30.0f;
+        v.reverseWheelSpeed = 14.0f;
+        v.brakeTorque = 2400.0f;
+        v.suspHertz = 5.5f;
+        v.suspDamping = 0.78f;
+        v.suspTravelDown = 0.16f;
+        v.suspTravelUp = 0.12f;
+        v.tireFriction = 1.30f;
+        v.airAccel = 3.4f;
+        v.airMaxSpin = 2.8f;
+        v.fuelSeconds = 65.0f;
+        v.nitroAccel = 9.5f;
+        v.upgrades = {slot(UpgradeKind::Engine, 15, 1500), slot(UpgradeKind::Suspension, 14),
+                      slot(UpgradeKind::Tires, 16), slot(UpgradeKind::FuelTank, 18)};
         list.push_back(v);
     }
     return list;
@@ -435,6 +615,10 @@ VehicleTuning computeTuning(const VehicleDef& def, const UpgradeLevels& levels)
     t.groundTilt = def.groundTilt;
     t.fuelSeconds = def.fuelSeconds;
     t.downforce = def.downforce;
+    t.thrusterAccel = def.thrusterAccel;
+    t.thrusterFuelRate = def.thrusterFuelRate;
+    t.nitroAccel = def.nitroAccel;
+    t.rollCageHits = def.rollCageHits;
 
     for (size_t i = 0; i < def.upgrades.size(); ++i) {
         const UpgradeSlot& slot = def.upgrades[i];
@@ -470,6 +654,13 @@ VehicleTuning computeTuning(const VehicleDef& def, const UpgradeLevels& levels)
         case UpgradeKind::Downforce:
             t.downforce += 8.0f * p;
             break;
+        case UpgradeKind::Thrusters:
+            t.thrusterAccel *= 1.0f + (def.thrusterGain - 1.0f) * p;
+            t.thrusterFuelRate *= 1.0f - 0.35f * p;
+            break;
+        case UpgradeKind::RollCage:
+            t.rollCageHits = def.rollCageHits + static_cast<int>(std::lround(3.0f * p));
+            break;
         }
     }
     return t;
@@ -501,6 +692,8 @@ const char* upgradeName(UpgradeKind kind)
     case UpgradeKind::FuelTank: return "Fuel Tank";
     case UpgradeKind::AirControl: return "Air Control";
     case UpgradeKind::Downforce: return "Downforce";
+    case UpgradeKind::Thrusters: return "Thrusters";
+    case UpgradeKind::RollCage: return "Roll Cage";
     }
     return "?";
 }

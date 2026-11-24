@@ -94,13 +94,21 @@ void Pickups::generateChunk(int index)
         items.push_back({kind, pos, value, id, collected_.count(id) > 0});
     };
 
+    auto deckY = [&](float x) {
+        return std::fmax(terrain_->surfaceHeight(x), terrain_->bridgeDeckHeight(x));
+    };
+
     // Fuel cans in (and just around) this chunk; neighbours matter for clearance.
     std::vector<float> fuelNear;
     for (int i = 0;; ++i) {
         const float fx = fuelPosition(*stage_, i);
         if (fx >= x1 + 20.0f) break;
         if (fx >= x0 - 20.0f) fuelNear.push_back(fx);
-        if (fx >= x0 && fx < x1) add(PickupKind::Fuel, {fx, terrain_->surfaceHeight(fx) + kFuelLift}, 0);
+        if (fx >= x0 && fx < x1) {
+            float fy = deckY(fx) + kFuelLift;
+            if (terrain_->generator().hasCeiling()) fy = std::fmin(fy, terrain_->ceilingHeight(fx) - 1.2f);
+            add(PickupKind::Fuel, {fx, fy}, 0);
+        }
     }
 
     // Coin clusters are centred on 45, 75, 105 ... m: between the 90 m fuel cans.
@@ -131,7 +139,9 @@ void Pickups::generateChunk(int index)
                 const float t = coins.size() > 1 ? static_cast<float>(i) / static_cast<float>(coins.size() - 1) : 0.5f;
                 lift += 1.5f * std::sin(t * kPi);
             }
-            add(PickupKind::Coin, {x, terrain_->surfaceHeight(x) + lift}, coins[i]);
+            float cy = deckY(x) + lift;
+            if (terrain_->generator().hasCeiling()) cy = std::fmin(cy, terrain_->ceilingHeight(x) - 1.0f);
+            add(PickupKind::Coin, {x, cy}, coins[i]);
         }
     }
 }

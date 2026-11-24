@@ -77,6 +77,7 @@ struct WheelStyle {
     float rimScale = 0.56f;
     int spokes = 5;
     bool slick = false;
+    bool wireMesh = false;
 };
 
 void drawWheel(b2Transform t, float r, const WheelStyle& s)
@@ -96,17 +97,36 @@ void drawWheel(b2Transform t, float r, const WheelStyle& s)
         }
     }
     draw::circle(c, r - kLine * 0.5f, s.tire);
-    // Sidewall highlight.
+    // Sidewall highlight (or chevron lunar mesh band).
     DrawRing(draw::rv(c), r * 0.70f, r * 0.80f, 0.0f, 360.0f, 32, draw::shade(s.tire, 1.35f));
+    if (s.wireMesh) {
+        for (int i = 0; i < s.knobs; ++i) {
+            const float a0 = static_cast<float>(i) / static_cast<float>(s.knobs) * kTwoPi;
+            const float a1 = static_cast<float>(i + 1) / static_cast<float>(s.knobs) * kTwoPi;
+            const b2Vec2 d0 = b2RotateVector(t.q, {std::cos(a0), std::sin(a0)});
+            const b2Vec2 d1 = b2RotateVector(t.q, {std::cos(a1), std::sin(a1)});
+            draw::line(b2MulAdd(c, r * 0.66f, d0), b2MulAdd(c, r * 0.92f, d1), r * 0.045f, s.rim);
+        }
+    }
     // Rim and spokes.
     const float rr = r * s.rimScale;
     draw::circle(c, rr + kLine * 0.5f, kInk);
     draw::circle(c, rr, s.rim);
     DrawRing(draw::rv(c), rr * 0.72f, rr * 0.86f, 0.0f, 360.0f, 32, draw::shade(s.rim, 0.85f));
-    for (int i = 0; i < s.spokes; ++i) {
-        const float a = static_cast<float>(i) / static_cast<float>(s.spokes) * kTwoPi;
-        const b2Vec2 dir = b2RotateVector(t.q, {std::cos(a), std::sin(a)});
-        draw::line(b2MulAdd(c, rr * 0.25f, dir), b2MulAdd(c, rr * 0.78f, dir), rr * 0.16f, draw::shade(s.rim, 0.75f));
+    if (s.wireMesh) {
+        for (int i = 0; i < s.spokes; ++i) {
+            const float a0 = static_cast<float>(i) / static_cast<float>(s.spokes) * kTwoPi;
+            const float a1 = a0 + kPi * 0.35f;
+            const b2Vec2 d0 = b2RotateVector(t.q, {std::cos(a0), std::sin(a0)});
+            const b2Vec2 d1 = b2RotateVector(t.q, {std::cos(a1), std::sin(a1)});
+            draw::line(b2MulAdd(c, rr * 0.24f, d0), b2MulAdd(c, rr * 0.80f, d1), rr * 0.09f, draw::shade(s.rim, 0.68f));
+        }
+    } else {
+        for (int i = 0; i < s.spokes; ++i) {
+            const float a = static_cast<float>(i) / static_cast<float>(s.spokes) * kTwoPi;
+            const b2Vec2 dir = b2RotateVector(t.q, {std::cos(a), std::sin(a)});
+            draw::line(b2MulAdd(c, rr * 0.25f, dir), b2MulAdd(c, rr * 0.78f, dir), rr * 0.16f, draw::shade(s.rim, 0.75f));
+        }
     }
     draw::circle(c, rr * 0.26f, s.hub);
     draw::circle(c, rr * 0.10f, kInk);
@@ -136,7 +156,8 @@ void drawStrut(b2Vec2 mount, b2Vec2 hub, float width, Color body, bool spring)
 
 enum class Headgear { Helmet, FullFace, StrawHat, RaceHelmet };
 
-void drawHead(b2Transform t, float r, Headgear gear, Color gearColor, Color accent, bool crashed)
+void drawHead(b2Transform t, float r, Headgear gear, Color gearColor, Color accent, bool crashed, bool goldVisor = false,
+              Color accent2 = BLANK)
 {
     const b2Vec2 c = t.p;
     auto P = [&](float x, float y) { return b2TransformPoint(t, {x * r, y * r}); };
@@ -171,11 +192,14 @@ void drawHead(b2Transform t, float r, Headgear gear, Color gearColor, Color acce
         draw::fillOutlined(helmet, t, gearColor, kInk, kLine);
         // Stripe over the top.
         draw::line(P(-0.55f, 0.80f), P(0.45f, 0.92f), r * 0.20f, accent);
+        if (accent2.a > 0) draw::line(P(-0.52f, 0.64f), P(0.42f, 0.76f), r * 0.11f, accent2);
         if (gear == Headgear::FullFace || gear == Headgear::RaceHelmet) {
             Shape visor(std::vector<b2Vec2>{{0.15f * r, 0.12f * r}, {1.12f * r, 0.18f * r}, {1.05f * r, -0.30f * r},
                                             {0.20f * r, -0.28f * r}});
-            draw::fillOutlined(visor, t, {46, 62, 96, 255}, kInk, kLine * 0.8f);
-            draw::line(P(0.35f, 0.04f), P(0.85f, 0.08f), r * 0.10f, {150, 190, 240, 200});
+            const Color visorFill = goldVisor ? Color{234, 178, 38, 255} : Color{46, 62, 96, 255};
+            const Color glint = goldVisor ? Color{255, 246, 175, 235} : Color{150, 190, 240, 200};
+            draw::fillOutlined(visor, t, visorFill, kInk, kLine * 0.8f);
+            draw::line(P(0.35f, 0.04f), P(0.85f, 0.08f), r * 0.10f, glint);
             return;  // face hidden behind the visor
         }
     }
@@ -501,6 +525,466 @@ void drawRaceCar(const VehicleDef& def, const VehiclePose& pose)
     (void)def;
 }
 
+b2Vec2 safeNorm(b2Vec2 v, b2Vec2 fallback)
+{
+    const float len = b2Length(v);
+    return len > 1e-5f ? b2MulSV(1.0f / len, v) : fallback;
+}
+
+struct MoonlanderArt {
+    Shape base, cabin, panel, goldLeft, goldRight, nozzleL, nozzleR, canopy, collar;
+};
+
+const MoonlanderArt& moonlanderArt()
+{
+    static const MoonlanderArt art = [] {
+        MoonlanderArt a;
+        a.base = Shape(std::vector<b2Vec2>{{-1.15f, -0.18f}, {1.15f, -0.18f}, {1.02f, 0.02f}, {-1.02f, 0.02f}});
+        a.cabin = Shape(std::vector<b2Vec2>{{-0.78f, 0.02f}, {0.78f, 0.02f}, {0.92f, 0.28f}, {0.58f, 0.58f},
+                                            {-0.58f, 0.58f}, {-0.92f, 0.28f}});
+        a.panel = Shape(roundedRect(-0.52f, 0.14f, 0.52f, 0.44f, 0.04f));
+        a.goldLeft = Shape(std::vector<b2Vec2>{{-0.74f, 0.06f}, {-0.56f, 0.06f}, {-0.56f, 0.48f}, {-0.84f, 0.28f}});
+        a.goldRight = Shape(std::vector<b2Vec2>{{0.56f, 0.06f}, {0.74f, 0.06f}, {0.84f, 0.28f}, {0.56f, 0.48f}});
+        a.nozzleL = Shape(std::vector<b2Vec2>{{-0.72f, -0.37f}, {-0.40f, -0.37f}, {-0.47f, -0.18f}, {-0.65f, -0.18f}});
+        a.nozzleR = Shape(std::vector<b2Vec2>{{0.40f, -0.37f}, {0.72f, -0.37f}, {0.65f, -0.18f}, {0.47f, -0.18f}});
+        std::vector<b2Vec2> dome;
+        for (int i = 0; i <= 18; ++i) {
+            const float ang = kPi * static_cast<float>(i) / 18.0f;
+            dome.push_back({0.55f * std::cos(ang), 0.57f + 0.62f * std::sin(ang)});
+        }
+        a.canopy = Shape(dome);
+        a.collar = Shape(roundedRect(-0.30f, 0.52f, 0.30f, 0.68f, 0.07f));
+        return a;
+    }();
+    return art;
+}
+
+void drawMoonlander(const VehicleDef& def, const VehiclePose& pose, float time, const WheelStyle& wheelStyle)
+{
+    const MoonlanderArt& a = moonlanderArt();
+    const b2Transform t = pose.chassis;
+    const Color gold{234, 180, 44, 255};
+    const Color goldDark{184, 132, 24, 255};
+    const Color whiteBody{240, 242, 248, 255};
+
+    // Telescopic landing gear struts + diagonal A-arms to all 3 live wheels.
+    for (size_t i = 0; i < pose.wheels.size() && i < def.wheels.size(); ++i) {
+        const float ax = def.wheels[i].anchor.x;
+        const b2Vec2 hub = pose.wheels[i].p;
+        if (i == 1) {
+            drawStrut(b2TransformPoint(t, {-0.26f, -0.12f}), hub, 0.055f, goldDark, false);
+            drawStrut(b2TransformPoint(t, {0.26f, -0.12f}), hub, 0.055f, goldDark, false);
+            drawStrut(b2TransformPoint(t, {0.0f, -0.02f}), hub, 0.075f, kSteel, true);
+        } else {
+            drawStrut(b2TransformPoint(t, {ax * 0.55f, -0.14f}), hub, 0.055f, goldDark, false);
+            drawStrut(b2TransformPoint(t, {ax * 0.84f, -0.02f}), hub, 0.075f, kSteel, true);
+        }
+    }
+
+    // Lunar wire-mesh wheels.
+    for (size_t i = 0; i < pose.wheels.size() && i < def.wheels.size(); ++i) {
+        drawWheel(pose.wheels[i], def.wheels[i].radius, wheelStyle);
+    }
+
+    // Rocket thrust flames out of twin bottom thruster nozzles.
+    if (pose.thrusting) {
+        for (float nx : {-0.56f, 0.56f}) {
+            const float flick = 0.88f + 0.22f * std::sin(time * 48.0f + nx * 6.0f) + 0.10f * std::cos(time * 83.0f);
+            const b2Vec2 noz = b2TransformPoint(t, {nx, -0.37f});
+            draw::circle(b2TransformPoint(t, {nx, -0.44f}), 0.24f * flick, draw::withAlpha({255, 190, 60, 255}, 0.35f));
+            auto cone = [&](float halfW, float len, Color col) {
+                const Vector2 pL = draw::rv(b2TransformPoint(t, {nx - halfW, -0.36f}));
+                const Vector2 pR = draw::rv(b2TransformPoint(t, {nx + halfW, -0.36f}));
+                const Vector2 pTip = draw::rv(b2TransformPoint(t, {nx, -0.36f - len * flick}));
+                DrawTriangle(pL, pTip, pR, col);
+            };
+            cone(0.15f, 1.05f, {255, 112, 24, 235});
+            cone(0.10f, 0.76f, {255, 222, 62, 245});
+            cone(0.055f, 0.44f, {225, 248, 255, 255});
+            (void)noz;
+        }
+    }
+
+    // Twin bottom thruster bells & gold-foil lower propulsion base.
+    draw::fillOutlined(a.nozzleL, t, {76, 80, 92, 255}, kInk, kLine);
+    draw::fillOutlined(a.nozzleR, t, {76, 80, 92, 255}, kInk, kLine);
+    for (float nx : {-0.56f, 0.56f}) {
+        draw::line(b2TransformPoint(t, {nx - 0.12f, -0.27f}), b2TransformPoint(t, {nx + 0.12f, -0.27f}), 0.03f, kSteel);
+    }
+    draw::fillOutlined(a.base, t, gold, kInk, kLine);
+    for (float x = -0.82f; x <= 0.85f; x += 0.41f) {
+        draw::line(b2TransformPoint(t, {x, -0.16f}), b2TransformPoint(t, {x * 0.90f, 0.00f}), 0.03f, goldDark);
+    }
+
+    // Rear dish antenna.
+    const b2Vec2 antBase = b2TransformPoint(t, {-0.72f, 0.46f});
+    const b2Vec2 antTip = b2TransformPoint(t, {-0.98f, 0.96f});
+    draw::line(antBase, antTip, 0.05f + kLine, kInk);
+    draw::line(antBase, antTip, 0.05f, kSteel);
+    draw::line(b2TransformPoint(t, {-0.98f, 0.74f}), b2TransformPoint(t, {-0.80f, 0.92f}), 0.06f, kSteel);
+    draw::circleOutlined(antTip, 0.055f, {235, 65, 55, 255}, kInk, kLine * 0.7f);
+
+    // Hexagonal lunar cabin + NASA-style black & gold panels.
+    draw::fillOutlined(a.cabin, t, whiteBody, kInk, kLine);
+    draw::fillOutlined(a.goldLeft, t, gold, kInk, kLine * 0.8f);
+    draw::fillOutlined(a.goldRight, t, gold, kInk, kLine * 0.8f);
+    draw::fillOutlined(a.panel, t, {36, 42, 54, 255}, kInk, kLine * 0.8f);
+    draw::line(b2TransformPoint(t, {-0.40f, 0.34f}), b2TransformPoint(t, {0.40f, 0.34f}), 0.045f, gold);
+    draw::line(b2TransformPoint(t, {-0.40f, 0.24f}), b2TransformPoint(t, {0.20f, 0.24f}), 0.035f, {72, 136, 224, 255});
+    // RCS pods on cabin sides.
+    for (float sx : {-0.92f, 0.92f}) {
+        draw::circleOutlined(b2TransformPoint(t, {sx, 0.28f}), 0.085f, kSteelDark, kInk, kLine * 0.8f);
+    }
+
+    // Astronaut torso collar + head (drawn inside the canopy!).
+    draw::fillOutlined(a.collar, t, whiteBody, kInk, kLine);
+    drawHead(pose.head, def.headRadius, Headgear::FullFace, {246, 248, 252, 255}, {236, 178, 42, 255}, pose.crashed,
+             true);
+
+    // Translucent cyan glass canopy dome + specular glint + curved frame struts over/around it.
+    draw::fill(a.canopy, t, draw::withAlpha({140, 230, 255, 255}, 0.28f));
+    for (int i = 0; i < 6; ++i) {
+        const float a0 = 0.28f + 0.16f * static_cast<float>(i);
+        const float a1 = a0 + 0.16f;
+        draw::line(b2TransformPoint(t, {0.46f * std::cos(a0), 0.59f + 0.53f * std::sin(a0)}),
+                   b2TransformPoint(t, {0.46f * std::cos(a1), 0.59f + 0.53f * std::sin(a1)}), 0.035f,
+                   draw::withAlpha({225, 250, 255, 255}, 0.65f));
+    }
+    // Curved canopy frame struts.
+    draw::outline(a.canopy, t, 0.065f, kInk);
+    for (size_t i = 0; i + 1 < a.canopy.points.size(); ++i) {
+        draw::line(b2TransformPoint(t, a.canopy.points[i]), b2TransformPoint(t, a.canopy.points[i + 1]), 0.035f, kSteel);
+    }
+    for (int i = 0; i < 8; ++i) {
+        const float u0 = static_cast<float>(i) / 8.0f;
+        const float u1 = static_cast<float>(i + 1) / 8.0f;
+        auto ribPt = [](float u) -> b2Vec2 {
+            const float ang = lerpf(0.0f, kPi * 0.62f, u);
+            return {0.10f + 0.26f * std::cos(ang) - 0.18f * u, 0.57f + 0.58f * std::sin(ang * 0.85f)};
+        };
+        const b2Vec2 p0 = b2TransformPoint(t, ribPt(u0));
+        const b2Vec2 p1 = b2TransformPoint(t, ribPt(u1));
+        draw::line(p0, p1, 0.055f, kInk);
+        draw::line(p0, p1, 0.028f, kSteel);
+    }
+    draw::line(b2TransformPoint(t, {-0.58f, 0.57f}), b2TransformPoint(t, {0.58f, 0.57f}), 0.075f, kInk);
+    draw::line(b2TransformPoint(t, {-0.58f, 0.57f}), b2TransformPoint(t, {0.58f, 0.57f}), 0.045f, kSteel);
+}
+
+struct RallyArt {
+    Shape body, scoop, spoiler, mudRear, mudFront, seat, torso, quarterGlass, goldSwoosh;
+};
+
+const RallyArt& rallyArt()
+{
+    static const RallyArt art = [] {
+        RallyArt a;
+        std::vector<b2Vec2> body{{-1.62f, -0.16f}};
+        appendArch(body, {-1.12f, -0.34f}, 0.50f, -0.16f);
+        appendArch(body, {1.14f, -0.34f}, 0.50f, -0.16f);
+        for (b2Vec2 p : {b2Vec2{1.63f, -0.16f}, b2Vec2{1.67f, 0.04f}, b2Vec2{1.54f, 0.22f}, b2Vec2{1.38f, 0.36f},
+                         b2Vec2{0.38f, 0.38f}, b2Vec2{0.26f, 0.24f}, b2Vec2{-0.96f, 0.24f}, b2Vec2{-0.82f, 0.88f},
+                         b2Vec2{-1.16f, 0.88f}, b2Vec2{-1.56f, 0.22f}, b2Vec2{-1.64f, 0.08f}})
+            body.push_back(p);
+        a.body = Shape(body);
+        a.scoop = Shape(std::vector<b2Vec2>{{0.62f, 0.36f}, {1.08f, 0.35f}, {1.02f, 0.47f}, {0.72f, 0.46f}});
+        a.spoiler = Shape(std::vector<b2Vec2>{{-1.66f, 1.00f}, {-1.10f, 0.94f}, {-1.14f, 1.07f}, {-1.70f, 1.13f}});
+        a.mudRear = Shape(std::vector<b2Vec2>{{-1.70f, -0.46f}, {-1.56f, -0.46f}, {-1.48f, -0.14f}, {-1.62f, -0.14f}});
+        a.mudFront = Shape(std::vector<b2Vec2>{{0.52f, -0.44f}, {0.65f, -0.44f}, {0.73f, -0.14f}, {0.60f, -0.14f}});
+        a.seat = Shape(roundedRect(-0.56f, 0.20f, -0.34f, 0.68f, 0.06f));
+        a.torso = Shape(std::vector<b2Vec2>{{-0.38f, 0.20f}, {-0.02f, 0.20f}, {-0.04f, 0.44f}, {-0.14f, 0.56f},
+                                            {-0.30f, 0.56f}, {-0.38f, 0.42f}});
+        a.quarterGlass = Shape(std::vector<b2Vec2>{{-1.36f, 0.28f}, {-0.98f, 0.28f}, {-0.88f, 0.80f}, {-1.12f, 0.80f}});
+        a.goldSwoosh = Shape(std::vector<b2Vec2>{{-0.55f, -0.06f}, {0.58f, 0.08f}, {0.50f, 0.19f}, {-0.62f, 0.08f}});
+        return a;
+    }();
+    return art;
+}
+
+void drawRally(const VehicleDef& def, const VehiclePose& pose)
+{
+    const RallyArt& a = rallyArt();
+    const b2Transform t = pose.chassis;
+    const Color wrcBlue{32, 92, 210, 255};
+    const Color wrcGold{250, 204, 48, 255};
+    const Color mudRed{218, 42, 42, 255};
+
+    // Exhaust tailpipe & red mudflaps behind wheels.
+    draw::line(b2TransformPoint(t, {-1.42f, -0.10f}), b2TransformPoint(t, {-1.64f, -0.10f}), 0.11f + kLine, kInk);
+    draw::line(b2TransformPoint(t, {-1.42f, -0.10f}), b2TransformPoint(t, {-1.64f, -0.10f}), 0.11f, kSteel);
+    draw::fillOutlined(a.mudRear, t, mudRed, kInk, kLine * 0.8f);
+    draw::fillOutlined(a.mudFront, t, mudRed, kInk, kLine * 0.8f);
+
+    // Interior seat, driver racing suit, steering wheel.
+    draw::fillOutlined(a.seat, t, {48, 46, 56, 255}, kInk, kLine);
+    draw::fillOutlined(a.torso, t, {28, 76, 178, 255}, kInk, kLine);
+    draw::line(b2TransformPoint(t, {0.26f, 0.26f}), b2TransformPoint(t, {0.10f, 0.50f}), 0.055f, kInk);
+    draw::line(b2TransformPoint(t, {0.04f, 0.58f}), b2TransformPoint(t, {0.16f, 0.42f}), 0.065f, kInk);
+    const b2Vec2 shoulder = b2TransformPoint(t, {-0.18f, 0.48f});
+    const b2Vec2 hand = b2TransformPoint(t, {0.10f, 0.50f});
+    draw::line(shoulder, hand, 0.11f + kLine, kInk);
+    draw::line(shoulder, hand, 0.11f, {240, 242, 248, 255});
+
+    // Rear spoiler pillar + wing.
+    draw::line(b2TransformPoint(t, {-1.16f, 0.84f}), b2TransformPoint(t, {-1.36f, 1.02f}), 0.09f + kLine, kInk);
+    draw::line(b2TransformPoint(t, {-1.16f, 0.84f}), b2TransformPoint(t, {-1.36f, 1.02f}), 0.09f, wrcBlue);
+    draw::fillOutlined(a.spoiler, t, wrcBlue, kInk, kLine);
+    draw::line(b2TransformPoint(t, {-1.66f, 1.06f}), b2TransformPoint(t, {-1.16f, 1.01f}), 0.04f, wrcGold);
+
+    // WRC blue & gold hatchback body.
+    draw::fillOutlined(a.body, t, wrcBlue, kInk, kLine);
+    draw::fill(a.goldSwoosh, t, wrcGold);
+    draw::line(b2TransformPoint(t, {-1.42f, 0.16f}), b2TransformPoint(t, {0.28f, 0.18f}), 0.055f, WHITE);
+    draw::line(b2TransformPoint(t, {-0.96f, 0.30f}), b2TransformPoint(t, {-1.38f, 0.68f}), 0.08f, wrcGold);
+    draw::fillOutlined(a.quarterGlass, t, {44, 58, 82, 220}, kInk, kLine * 0.8f);
+    // Door crease.
+    draw::line(b2TransformPoint(t, {-0.46f, -0.10f}), b2TransformPoint(t, {-0.46f, 0.22f}), 0.03f, draw::shade(wrcBlue, 0.7f));
+    draw::line(b2TransformPoint(t, {0.22f, -0.10f}), b2TransformPoint(t, {0.22f, 0.22f}), 0.03f, draw::shade(wrcBlue, 0.7f));
+    // Hood intake scoop & front twin rally lamps.
+    draw::fillOutlined(a.scoop, t, draw::shade(wrcBlue, 0.82f), kInk, kLine * 0.8f);
+    draw::line(b2TransformPoint(t, {1.06f, 0.38f}), b2TransformPoint(t, {1.02f, 0.44f}), 0.045f, kInk);
+    draw::circleOutlined(b2TransformPoint(t, {1.54f, 0.22f}), 0.07f, {255, 242, 160, 255}, kInk, kLine * 0.75f);
+    draw::circleOutlined(b2TransformPoint(t, {1.62f, 0.10f}), 0.07f, {255, 242, 160, 255}, kInk, kLine * 0.75f);
+    draw::circleOutlined(b2TransformPoint(t, {-1.54f, 0.16f}), 0.055f, {245, 58, 50, 255}, kInk, kLine * 0.75f);
+
+    // Breakable tubular steel roll cage matching def.rollCage.
+    const Color cageSteel{215, 222, 232, 255};
+    if (!pose.rollCageBroken) {
+        const b2Vec2 pRearBase = b2TransformPoint(t, {-0.98f, 0.26f});
+        const b2Vec2 pRearTop = b2TransformPoint(t, {-0.80f, 0.99f});
+        const b2Vec2 pFrontTop = b2TransformPoint(t, {0.35f, 0.99f});
+        const b2Vec2 pFrontBase = b2TransformPoint(t, {0.37f, 0.36f});
+        const b2Vec2 pMidRoof = b2TransformPoint(t, {-0.26f, 0.99f});
+
+        auto cageTube = [&](b2Vec2 p0, b2Vec2 p1, float w) {
+            draw::line(p0, p1, w + kLine, kInk);
+            draw::line(p0, p1, w, cageSteel);
+        };
+        cageTube(pRearBase, pMidRoof, 0.065f);
+        cageTube(pRearBase, pRearTop, 0.085f);
+        cageTube(pRearTop, pFrontTop, 0.095f);
+        cageTube(pFrontTop, pFrontBase, 0.085f);
+
+        // Damage feedback: orange stress marks & dark crack notches.
+        if (pose.rollCageDamage > 0) {
+            const Color stress{255, 130, 32, 235};
+            auto crackAt = [&](b2Vec2 pt, b2Vec2 d) {
+                draw::circle(pt, 0.085f, draw::withAlpha(stress, 0.75f));
+                draw::line(b2Sub(pt, d), b2Add(pt, d), 0.038f, kInk);
+            };
+            crackAt(b2TransformPoint(t, {-0.22f, 0.99f}), b2RotateVector(t.q, {0.06f, 0.08f}));
+            crackAt(b2TransformPoint(t, {0.36f, 0.68f}), b2RotateVector(t.q, {0.07f, -0.05f}));
+            if (pose.rollCageDamage >= 2) {
+                crackAt(b2TransformPoint(t, {-0.58f, 0.99f}), b2RotateVector(t.q, {-0.05f, 0.08f}));
+                crackAt(b2TransformPoint(t, {0.14f, 0.99f}), b2RotateVector(t.q, {0.06f, -0.07f}));
+                draw::line(b2TransformPoint(t, {-0.38f, 0.96f}), b2TransformPoint(t, {0.04f, 1.02f}), 0.045f, stress);
+            }
+        }
+    } else {
+        // Broken roll cage: jagged snapped stubs where pillars used to be.
+        auto stub = [&](b2Vec2 basePt, b2Vec2 tipPt, b2Vec2 jag) {
+            draw::line(basePt, tipPt, 0.085f + kLine, kInk);
+            draw::line(basePt, tipPt, 0.085f, cageSteel);
+            draw::line(tipPt, b2Add(tipPt, jag), 0.04f, kInk);
+            draw::line(tipPt, b2Sub(tipPt, jag), 0.035f, {160, 166, 178, 255});
+        };
+        stub(b2TransformPoint(t, {0.37f, 0.36f}), b2TransformPoint(t, {0.40f, 0.55f}), b2RotateVector(t.q, {-0.04f, 0.06f}));
+        stub(b2TransformPoint(t, {-0.88f, 0.88f}), b2TransformPoint(t, {-0.68f, 0.95f}), b2RotateVector(t.q, {0.06f, 0.04f}));
+        stub(b2TransformPoint(t, {-0.98f, 0.26f}), b2TransformPoint(t, {-0.92f, 0.44f}), b2RotateVector(t.q, {0.04f, 0.05f}));
+    }
+    (void)def;
+}
+
+struct TankArt {
+    Shape hull, skirt, turret, hatch, cupola, barrel, evacuator, muzzle, torso, star;
+};
+
+const TankArt& tankArt()
+{
+    static const TankArt art = [] {
+        TankArt a;
+        a.hull = Shape(std::vector<b2Vec2>{{-1.54f, -0.16f}, {1.54f, -0.16f}, {1.64f, 0.12f}, {1.44f, 0.34f},
+                                           {-1.48f, 0.34f}, {-1.58f, 0.16f}});
+        a.skirt = Shape(roundedRect(-1.50f, -0.02f, 1.50f, 0.16f, 0.04f));
+        a.turret = Shape(std::vector<b2Vec2>{{-0.88f, 0.34f}, {0.48f, 0.34f}, {0.52f, 0.52f}, {0.34f, 0.72f},
+                                             {-0.76f, 0.72f}, {-0.92f, 0.52f}});
+        a.hatch = Shape(roundedRect(-0.40f, 0.70f, 0.10f, 0.80f, 0.03f));
+        a.cupola = Shape(roundedRect(-0.84f, 0.70f, -0.52f, 0.79f, 0.03f));
+        a.barrel = Shape(std::vector<b2Vec2>{{0.44f, 0.48f}, {1.84f, 0.51f}, {1.84f, 0.62f}, {0.44f, 0.61f}});
+        a.evacuator = Shape(roundedRect(1.00f, 0.46f, 1.32f, 0.66f, 0.03f));
+        a.muzzle = Shape(roundedRect(1.80f, 0.45f, 1.98f, 0.68f, 0.03f));
+        a.torso = Shape(std::vector<b2Vec2>{{-0.30f, 0.74f}, {0.00f, 0.74f}, {-0.04f, 0.90f}, {-0.26f, 0.90f}});
+        std::vector<b2Vec2> starPts;
+        for (int i = 0; i < 10; ++i) {
+            const float ang = kPi * 0.5f + static_cast<float>(i) * kPi * 0.2f;
+            const float rad = (i % 2 == 0) ? 0.12f : 0.05f;
+            starPts.push_back({rad * std::cos(ang), 0.24f + rad * std::sin(ang)});
+        }
+        a.star = Shape(starPts);
+        return a;
+    }();
+    return art;
+}
+
+void drawTank(const VehicleDef& def, const VehiclePose& pose, const WheelStyle& wheelStyle)
+{
+    const TankArt& a = tankArt();
+    const b2Transform t = pose.chassis;
+    const Color olive{92, 108, 66, 255};
+    const Color oliveDark{68, 82, 48, 255};
+    const Color oliveLight{118, 134, 88, 255};
+
+    // Dark recessed undercarriage behind wheels & tracks.
+    if (pose.wheels.size() >= 2) {
+        draw::line(pose.wheels.front().p, pose.wheels.back().p, 0.34f, {26, 28, 30, 220});
+    }
+
+    // Road wheels inside the track belt.
+    for (size_t i = 0; i < pose.wheels.size() && i < def.wheels.size(); ++i) {
+        drawWheel(pose.wheels[i], def.wheels[i].radius, wheelStyle);
+    }
+
+    // Continuous rubber/steel track belt wrapping smoothly around all live pose.wheels.
+    if (pose.wheels.size() >= 2) {
+        const size_t nw = pose.wheels.size();
+        const float r = def.wheels[0].radius;
+        const float trackR = r + 0.032f;
+        std::vector<b2Vec2> c(nw);
+        for (size_t i = 0; i < nw; ++i) c[i] = pose.wheels[i].p;
+
+        const b2Vec2 fwd = b2RotateVector(t.q, {1.0f, 0.0f});
+        const b2Vec2 spanDir = safeNorm(b2Sub(c[nw - 1], c[0]), fwd);
+        const b2Vec2 nTop{-spanDir.y, spanDir.x};
+        const float aTop = std::atan2(nTop.y, nTop.x);
+
+        std::vector<b2Vec2> nBot(nw - 1);
+        for (size_t i = 0; i + 1 < nw; ++i) {
+            const b2Vec2 sd = safeNorm(b2Sub(c[i + 1], c[i]), fwd);
+            nBot[i] = {sd.y, -sd.x};
+        }
+
+        std::vector<b2Vec2> trackPts;
+        trackPts.reserve(64);
+
+        // 1. Top tangent run from rear wheel 0 to front wheel last + subtle upper return curve.
+        constexpr int kTopSteps = 6;
+        const b2Vec2 topStart = b2MulAdd(c[0], trackR, nTop);
+        const b2Vec2 topEnd = b2MulAdd(c[nw - 1], trackR, nTop);
+        for (int s = 0; s <= kTopSteps; ++s) {
+            const float u = static_cast<float>(s) / static_cast<float>(kTopSteps);
+            b2Vec2 pt = b2MulAdd(b2Lerp(topStart, topEnd, u), 0.045f * std::sin(kPi * u), nTop);
+            for (size_t w = 1; w + 1 < nw; ++w) {
+                const b2Vec2 d = b2Sub(pt, c[w]);
+                if (std::fabs(b2Dot(d, spanDir)) < trackR) {
+                    const float proj = b2Dot(d, nTop);
+                    if (proj < trackR) pt = b2MulAdd(pt, trackR - proj, nTop);
+                }
+            }
+            trackPts.push_back(pt);
+        }
+
+        // 2. Clockwise wrap around front wheel.
+        const float aFrontBot = std::atan2(nBot[nw - 2].y, nBot[nw - 2].x);
+        float daFront = wrapAngle(aFrontBot - aTop);
+        if (daFront > 0.0f) daFront -= kTwoPi;
+        for (int s = 1; s <= 10; ++s) {
+            const float ang = aTop + daFront * (static_cast<float>(s) / 10.0f);
+            trackPts.push_back({c[nw - 1].x + trackR * std::cos(ang), c[nw - 1].y + trackR * std::sin(ang)});
+        }
+
+        // 3. Bottom run connecting through the bottom of each live wheel.
+        for (size_t i = nw - 2; i >= 1; --i) {
+            const float aIn = std::atan2(nBot[i].y, nBot[i].x);
+            const float aOut = std::atan2(nBot[i - 1].y, nBot[i - 1].x);
+            const float da = wrapAngle(aOut - aIn);
+            if (da < -0.05f) {
+                for (int s = 0; s <= 3; ++s) {
+                    const float ang = aIn + da * (static_cast<float>(s) / 3.0f);
+                    trackPts.push_back({c[i].x + trackR * std::cos(ang), c[i].y + trackR * std::sin(ang)});
+                }
+            } else {
+                const b2Vec2 bis = safeNorm(b2Add(nBot[i], nBot[i - 1]), nBot[i]);
+                trackPts.push_back(b2MulAdd(c[i], trackR, bis));
+            }
+        }
+
+        // 4. Clockwise wrap around rear wheel.
+        const float aRearBot = std::atan2(nBot[0].y, nBot[0].x);
+        float daRear = wrapAngle(aTop - aRearBot);
+        if (daRear > 0.0f) daRear -= kTwoPi;
+        for (int s = 0; s < 10; ++s) {
+            const float ang = aRearBot + daRear * (static_cast<float>(s) / 10.0f);
+            trackPts.push_back({c[0].x + trackR * std::cos(ang), c[0].y + trackR * std::sin(ang)});
+        }
+
+        // Draw track loop + moving cleats driven by wheel 0 angle.
+        const size_t np = trackPts.size();
+        for (size_t i = 0; i < np; ++i) {
+            draw::line(trackPts[i], trackPts[(i + 1) % np], 0.11f, kInk);
+        }
+        for (size_t i = 0; i < np; ++i) {
+            draw::line(trackPts[i], trackPts[(i + 1) % np], 0.065f, {48, 50, 56, 255});
+        }
+
+        std::vector<float> cumLen(np + 1, 0.0f);
+        for (size_t i = 0; i < np; ++i) {
+            cumLen[i + 1] = cumLen[i] + b2Distance(trackPts[i], trackPts[(i + 1) % np]);
+        }
+        const float totalLen = cumLen.back();
+        if (totalLen > 0.1f) {
+            constexpr int kCleatsPerRev = 6;
+            const int numCleats = std::max(12, static_cast<int>(std::round(totalLen / (kTwoPi * r / static_cast<float>(kCleatsPerRev)))));
+            const float cleatSpacing = totalLen / static_cast<float>(numCleats);
+            const float wheelAngle = b2Rot_GetAngle(pose.wheels[0].q);
+            const float offset = (-wheelAngle / kTwoPi) * static_cast<float>(kCleatsPerRev) * cleatSpacing;
+
+            size_t seg = 0;
+            for (int m = 0; m < numCleats; ++m) {
+                float sPos = std::fmod(static_cast<float>(m) * cleatSpacing + offset, totalLen);
+                if (sPos < 0.0f) sPos += totalLen;
+                if (sPos < cumLen[seg]) seg = 0;
+                while (seg + 1 < np && cumLen[seg + 1] < sPos) ++seg;
+                const float segLen = cumLen[seg + 1] - cumLen[seg];
+                const float frac = segLen > 1e-5f ? (sPos - cumLen[seg]) / segLen : 0.0f;
+                const b2Vec2 pA = trackPts[seg];
+                const b2Vec2 pB = trackPts[(seg + 1) % np];
+                const b2Vec2 pos = b2Lerp(pA, pB, frac);
+                const b2Vec2 dir = safeNorm(b2Sub(pB, pA), fwd);
+                const b2Vec2 nOut{-dir.y, dir.x};
+                draw::line(pos, b2MulAdd(pos, 0.068f, nOut), 0.064f, kInk);
+                draw::line(pos, b2MulAdd(pos, 0.058f, nOut), 0.038f, {92, 96, 106, 255});
+            }
+        }
+    }
+
+    // Rear exhaust muffler + long cannon barrel (behind turret edge).
+    draw::line(b2TransformPoint(t, {-1.40f, 0.16f}), b2TransformPoint(t, {-1.58f, 0.16f}), 0.11f + kLine, kInk);
+    draw::line(b2TransformPoint(t, {-1.40f, 0.16f}), b2TransformPoint(t, {-1.58f, 0.16f}), 0.11f, {64, 68, 70, 255});
+
+    draw::fillOutlined(a.barrel, t, oliveDark, kInk, kLine);
+    draw::fillOutlined(a.evacuator, t, olive, kInk, kLine);
+    draw::fillOutlined(a.muzzle, t, oliveDark, kInk, kLine);
+    draw::line(b2TransformPoint(t, {1.86f, 0.56f}), b2TransformPoint(t, {1.94f, 0.56f}), 0.05f, kInk);
+
+    // Armored sloped hull, side skirts overlapping top track run, rivets & white star.
+    draw::fillOutlined(a.hull, t, olive, kInk, kLine);
+    draw::line(b2TransformPoint(t, {-1.38f, 0.28f}), b2TransformPoint(t, {1.38f, 0.28f}), 0.05f, oliveLight);
+    draw::fillOutlined(a.skirt, t, oliveDark, kInk, kLine);
+    for (float rx = -1.36f; rx <= 1.38f; rx += 0.34f) {
+        draw::circle(b2TransformPoint(t, {rx, 0.07f}), 0.028f, oliveLight);
+    }
+    draw::fill(a.star, t, WHITE);
+
+    // Rounded turret, commander cupola & torso.
+    draw::fillOutlined(a.torso, t, {76, 88, 56, 255}, kInk, kLine);
+    draw::fillOutlined(a.turret, t, olive, kInk, kLine);
+    draw::fillOutlined(a.hatch, t, oliveLight, kInk, kLine * 0.85f);
+    draw::fillOutlined(a.cupola, t, oliveDark, kInk, kLine * 0.85f);
+    draw::circleOutlined(b2TransformPoint(t, {0.46f, 0.52f}), 0.10f, oliveDark, kInk, kLine * 0.8f);
+    draw::circle(b2TransformPoint(t, {-0.54f, 0.54f}), 0.032f, oliveLight);
+    draw::circle(b2TransformPoint(t, {0.18f, 0.54f}), 0.032f, oliveLight);
+}
+
 WheelStyle wheelStyleFor(const std::string& id)
 {
     WheelStyle s;
@@ -528,6 +1012,30 @@ WheelStyle wheelStyleFor(const std::string& id)
         s.rim = {250, 210, 60, 255};
         s.hub = {40, 40, 46, 255};
         s.spokes = 6;
+    } else if (id == "moonlander") {
+        s.knobs = 16;
+        s.knobDepth = 0.07f;
+        s.rimScale = 0.68f;
+        s.tire = {126, 134, 148, 255};
+        s.rim = {222, 228, 238, 255};
+        s.hub = {234, 180, 44, 255};
+        s.spokes = 10;
+        s.wireMesh = true;
+    } else if (id == "rally") {
+        s.knobs = 16;
+        s.knobDepth = 0.085f;
+        s.rimScale = 0.60f;
+        s.tire = {40, 40, 46, 255};
+        s.rim = {250, 204, 48, 255};
+        s.hub = {32, 92, 210, 255};
+        s.spokes = 8;
+    } else if (id == "tank") {
+        s.slick = true;
+        s.rimScale = 0.66f;
+        s.tire = {46, 50, 54, 255};
+        s.rim = {86, 94, 82, 255};
+        s.hub = {92, 108, 66, 255};
+        s.spokes = 6;
     }
     return s;
 }
@@ -536,16 +1044,35 @@ WheelStyle wheelStyleFor(const std::string& id)
 
 void drawVehicle(const VehicleDef& def, const VehiclePose& pose, float time)
 {
-    (void)time;
     const WheelStyle wheelStyle = wheelStyleFor(def.id);
 
     // Struts for the vehicles that show them, then wheels behind the bike frame.
-    if (def.id == "jeep" || def.id == "racecar" || def.id == "tractor") {
+    if (def.id == "jeep" || def.id == "racecar" || def.id == "tractor" || def.id == "rally") {
         for (size_t i = 0; i < pose.wheels.size() && i < def.wheels.size(); ++i) {
             drawStrut(b2TransformPoint(pose.chassis, {def.wheels[i].anchor.x, def.wheels[i].anchor.y + 0.30f}),
-                      pose.wheels[i].p, 0.07f, kSteelDark, def.id == "jeep");
+                      pose.wheels[i].p, 0.07f, kSteelDark, def.id == "jeep" || def.id == "rally");
         }
     }
+
+    // Vibrant electric-cyan/white flickering nitro flame cone shooting from the exhaust.
+    if (pose.boosting && !def.hasThrusters()) {
+        const b2Vec2 origin = b2TransformPoint(pose.chassis, exhaustPoint(def));
+        const b2Vec2 dir = safeNorm(b2RotateVector(pose.chassis.q, exhaustDirection(def)), {-1.0f, 0.0f});
+        const b2Vec2 perp{-dir.y, dir.x};
+        const float flick = 0.85f + 0.25f * std::sin(time * 58.0f) + 0.12f * std::cos(time * 93.0f);
+        auto drawCone = [&](float halfW, float len, Color c) {
+            const Vector2 pL = draw::rv(b2MulAdd(origin, halfW, perp));
+            const Vector2 pR = draw::rv(b2MulAdd(origin, -halfW, perp));
+            const Vector2 pTip = draw::rv(b2MulAdd(origin, len * flick, dir));
+            DrawTriangle(pR, pTip, pL, c);
+        };
+        draw::circle(b2MulAdd(origin, 0.10f, dir), 0.19f, draw::withAlpha({40, 210, 255, 255}, 0.35f));
+        drawCone(0.16f, 1.15f, {30, 185, 255, 230});
+        drawCone(0.11f, 0.82f, {125, 245, 255, 245});
+        drawCone(0.06f, 0.48f, {245, 252, 255, 255});
+    }
+
+    const bool customWheels = def.id == "moonlander" || def.id == "tank";
     const bool wheelsBehind = def.id == "bike";
     auto drawWheels = [&] {
         for (size_t i = 0; i < pose.wheels.size() && i < def.wheels.size(); ++i)
@@ -556,6 +1083,7 @@ void drawVehicle(const VehicleDef& def, const VehiclePose& pose, float time)
     Headgear gear = Headgear::Helmet;
     Color gearColor{250, 204, 52, 255};
     Color accent{220, 60, 50, 255};
+    Color accent2 = BLANK;
     if (def.id == "jeep") drawJeep(def, pose);
     else if (def.id == "bike") {
         drawBike(def, pose);
@@ -576,10 +1104,25 @@ void drawVehicle(const VehicleDef& def, const VehiclePose& pose, float time)
         gear = Headgear::RaceHelmet;
         gearColor = {250, 220, 40, 255};
         accent = {40, 120, 230, 255};
+    } else if (def.id == "moonlander") {
+        drawMoonlander(def, pose, time, wheelStyle);
+    } else if (def.id == "rally") {
+        drawRally(def, pose);
+        gear = Headgear::RaceHelmet;
+        gearColor = {246, 248, 252, 255};
+        accent = {32, 92, 210, 255};
+        accent2 = {250, 204, 48, 255};
+    } else if (def.id == "tank") {
+        drawTank(def, pose, wheelStyle);
+        gear = Headgear::Helmet;
+        gearColor = {84, 98, 60, 255};
+        accent = {210, 174, 72, 255};
     }
 
-    if (!wheelsBehind) drawWheels();
-    drawHead(pose.head, def.headRadius, gear, gearColor, accent, pose.crashed);
+    if (!wheelsBehind && !customWheels) drawWheels();
+    if (def.id != "moonlander") {
+        drawHead(pose.head, def.headRadius, gear, gearColor, accent, pose.crashed, false, accent2);
+    }
 }
 
 b2Vec2 exhaustPoint(const VehicleDef& def)
@@ -588,12 +1131,18 @@ b2Vec2 exhaustPoint(const VehicleDef& def)
     if (def.id == "tractor") return {0.78f, 1.12f};
     if (def.id == "monster") return {-1.60f, 0.10f};
     if (def.id == "racecar") return {-1.80f, 0.10f};
+    if (def.id == "moonlander") return {-0.56f, -0.37f};
+    if (def.id == "rally") return {-1.65f, -0.10f};
+    if (def.id == "tank") return {-1.60f, 0.16f};
     return {-1.50f, -0.10f};
 }
 
 b2Vec2 exhaustDirection(const VehicleDef& def)
 {
     if (def.id == "tractor") return {-0.2f, 1.0f};
+    if (def.id == "moonlander") return {0.0f, -1.0f};
+    if (def.id == "rally") return {-1.0f, 0.12f};
+    if (def.id == "tank") return {-1.0f, 0.35f};
     return {-1.0f, 0.15f};
 }
 

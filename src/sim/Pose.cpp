@@ -33,6 +33,10 @@ VehiclePose poseOf(const Session& session)
     for (int i = 0; i < v.wheelCount(); ++i) pose.wheels.push_back(v.wheelTransform(i));
     pose.head = v.headTransform();
     pose.crashed = session.state() == RunState::Crashed;
+    pose.rollCageBroken = v.hasRollCage() && !v.rollCageIntact();
+    pose.rollCageDamage = v.hasRollCage() ? (v.rollCageMaxHits() - v.rollCageHitsLeft()) : 0;
+    pose.thrusting = v.thrusting();
+    pose.boosting = v.boosting();
     return pose;
 }
 

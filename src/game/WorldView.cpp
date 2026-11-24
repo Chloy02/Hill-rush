@@ -94,6 +94,98 @@ void drawSpire(Vector2 base, float h, Color c)
     DrawTriangle({base.x + h * 0.15f, base.y - h * 0.65f}, {base.x - h * 0.05f, base.y}, {base.x + h * 0.40f, base.y}, draw::shade(c, 0.9f));
 }
 
+void drawStalagmite(Vector2 base, float h, Color c, Color crystalGlow, bool withCrystal)
+{
+    DrawTriangle({base.x, base.y - h}, {base.x - h * 0.24f, base.y}, {base.x + h * 0.24f, base.y}, c);
+    DrawTriangle({base.x + h * 0.18f, base.y - h * 0.62f}, {base.x, base.y}, {base.x + h * 0.38f, base.y}, draw::shade(c, 0.82f));
+    if (withCrystal) {
+        const float ch = h * 0.44f;
+        const Vector2 cBase{base.x - h * 0.16f, base.y};
+        DrawCircleV({cBase.x, cBase.y - ch * 0.5f}, ch * 0.65f, draw::withAlpha(crystalGlow, 0.18f));
+        DrawTriangle({cBase.x - ch * 0.16f, cBase.y - ch}, {cBase.x - ch * 0.26f, cBase.y}, {cBase.x + ch * 0.04f, cBase.y}, crystalGlow);
+        DrawTriangle({cBase.x + ch * 0.14f, cBase.y - ch * 0.72f}, {cBase.x - ch * 0.02f, cBase.y}, {cBase.x + ch * 0.26f, cBase.y},
+                     draw::shade(crystalGlow, 1.15f));
+    }
+}
+
+void drawBridges(const Session& session, const Palette& pal)
+{
+    (void)pal;
+    const Color timberLight{168, 112, 64, 255};
+    const Color timberDark{146, 94, 52, 255};
+    const Color postWood{116, 74, 42, 255};
+    const Color ropeColor{174, 146, 98, 225};
+
+    for (const auto& [chunk, list] : session.terrain().bridges()) {
+        (void)chunk;
+        for (const Terrain::Bridge& b : list) {
+            const float postH = 1.15f;
+            const float postDepth = 0.35f;
+            const b2Vec2 topL{b.x0, b.y0 + postH};
+            const b2Vec2 topR{b.x1, b.y1 + postH};
+
+            // Sagging suspension rope across the bridge posts, with vertical hangers.
+            constexpr int kRopeSegs = 12;
+            const float sag = 0.52f;
+            auto ropeAt = [&](float u) -> b2Vec2 {
+                b2Vec2 pt = b2Lerp(topL, topR, u);
+                pt.y -= sag * 4.0f * u * (1.0f - u);
+                return pt;
+            };
+            for (int s = 0; s < kRopeSegs; ++s) {
+                const float u0 = static_cast<float>(s) / static_cast<float>(kRopeSegs);
+                const float u1 = static_cast<float>(s + 1) / static_cast<float>(kRopeSegs);
+                const b2Vec2 r0 = ropeAt(u0);
+                const b2Vec2 r1 = ropeAt(u1);
+                draw::line(r0, r1, 0.06f, kInk);
+                draw::line(r0, r1, 0.036f, ropeColor);
+            }
+            for (size_t pi = 0; pi < b.planks.size(); ++pi) {
+                const Terrain::BridgePlank& plank = b.planks[pi];
+                if (!b2Body_IsValid(plank.body)) continue;
+                const float u = (static_cast<float>(pi) + 0.5f) / static_cast<float>(b.planks.size());
+                const b2Vec2 ropeTop = ropeAt(u);
+                const b2Vec2 plankPos = b2Body_GetTransform(plank.body).p;
+                draw::line(ropeTop, plankPos, 0.025f, draw::withAlpha(ropeColor, 0.65f));
+            }
+
+            // Wooden support posts anchored at both creek banks.
+            auto drawPost = [&](float px, float py) {
+                draw::line({px, py - postDepth}, {px, py + postH}, 0.24f, kInk);
+                draw::line({px, py - postDepth}, {px, py + postH}, 0.17f, postWood);
+                draw::circleOutlined({px, py + postH + 0.05f}, 0.13f, timberLight, kInk, 0.04f);
+            };
+            drawPost(b.x0, b.y0);
+            drawPost(b.x1, b.y1);
+
+            // Live articulated bridge planks from Box2D bodies.
+            for (size_t pi = 0; pi < b.planks.size(); ++pi) {
+                const Terrain::BridgePlank& plank = b.planks[pi];
+                if (!b2Body_IsValid(plank.body)) continue;
+                const b2Transform xf = b2Body_GetTransform(plank.body);
+                const b2Vec2 c0 = b2TransformPoint(xf, {-plank.halfW, -plank.halfH});
+                const b2Vec2 c1 = b2TransformPoint(xf, {plank.halfW, -plank.halfH});
+                const b2Vec2 c2 = b2TransformPoint(xf, {plank.halfW, plank.halfH});
+                const b2Vec2 c3 = b2TransformPoint(xf, {-plank.halfW, plank.halfH});
+                const Color wood = (pi % 2 == 0) ? timberLight : timberDark;
+                const Vector2 v0 = draw::rv(c0);
+                const Vector2 v1 = draw::rv(c1);
+                const Vector2 v2 = draw::rv(c2);
+                const Vector2 v3 = draw::rv(c3);
+                DrawTriangle(v0, v1, v2, wood);
+                DrawTriangle(v0, v2, v3, wood);
+                draw::line(c0, c1, 0.045f, kInk);
+                draw::line(c1, c2, 0.045f, kInk);
+                draw::line(c2, c3, 0.045f, kInk);
+                draw::line(c3, c0, 0.045f, kInk);
+                // Timber grain & bolt/nail dots.
+                draw::circle(b2TransformPoint(xf, {-plank.halfW * 0.62f, 0.0f}), 0.032f, kInk);
+                draw::circle(b2TransformPoint(xf, {plank.halfW * 0.62f, 0.0f}), 0.032f, kInk);
+            }
+        }
+    }
+}
+
 } // namespace
 
 // ---------------------------------------------------------------------------
@@ -167,6 +259,7 @@ void WorldView::draw(const Session& session, const VehiclePose& pose, const Part
 
     BeginMode2D(camera());
     drawTerrain(session, pal, assets);
+    drawBridges(session, pal);
     drawProps(session, pal);
     drawMarkers(session, assets);
     drawPickups(session, assets, time);
@@ -184,10 +277,34 @@ void WorldView::draw(const Session& session, const VehiclePose& pose, const Part
         for (const auto& p : probes) DrawCircleLinesV(draw::rv(p.centre), p.radius, MAGENTA);
         const float x0 = centre_.x - screenW() * 0.5f / ppm_;
         const float x1 = centre_.x + screenW() * 0.5f / ppm_;
+        const Terrain& t = session.terrain();
+        const TerrainGenerator& gen = t.generator();
         for (float x = x0; x < x1; x += Terrain::kStep) {
-            const Terrain& t = session.terrain();
+            const float midX = x + Terrain::kStep * 0.5f;
+            const Color lineColor = gen.isIce(midX) ? SKYBLUE : (gen.isMud(midX) ? BROWN : RED);
             DrawLineEx(draw::rv(x, t.surfaceHeight(x)), draw::rv(x + Terrain::kStep, t.surfaceHeight(x + Terrain::kStep)),
-                       0.04f, t.generator().isIce(x) ? SKYBLUE : RED);
+                       0.04f, lineColor);
+            if (gen.hasCeiling()) {
+                DrawLineEx(draw::rv(x, t.ceilingHeight(x)),
+                           draw::rv(x + Terrain::kStep, t.ceilingHeight(x + Terrain::kStep)), 0.04f, ORANGE);
+            }
+        }
+        for (const auto& [chunk, list] : t.bridges()) {
+            (void)chunk;
+            for (const Terrain::Bridge& b : list) {
+                for (const Terrain::BridgePlank& plank : b.planks) {
+                    if (!b2Body_IsValid(plank.body)) continue;
+                    const b2Transform xf = b2Body_GetTransform(plank.body);
+                    const Vector2 q0 = draw::rv(b2TransformPoint(xf, {-plank.halfW, -plank.halfH}));
+                    const Vector2 q1 = draw::rv(b2TransformPoint(xf, {plank.halfW, -plank.halfH}));
+                    const Vector2 q2 = draw::rv(b2TransformPoint(xf, {plank.halfW, plank.halfH}));
+                    const Vector2 q3 = draw::rv(b2TransformPoint(xf, {-plank.halfW, plank.halfH}));
+                    DrawLineEx(q0, q1, 0.04f, YELLOW);
+                    DrawLineEx(q1, q2, 0.04f, YELLOW);
+                    DrawLineEx(q2, q3, 0.04f, YELLOW);
+                    DrawLineEx(q3, q0, 0.04f, YELLOW);
+                }
+            }
         }
     }
     EndMode2D();
@@ -199,6 +316,22 @@ void WorldView::drawSky(const Palette& pal, float time) const
     const float w = screenW();
     const float h = screenH();
     DrawRectangleGradientV(0, 0, static_cast<int>(w) + 1, static_cast<int>(h) + 1, pal.skyTop, pal.skyBottom);
+
+    if (pal.cave) {
+        // Subtle subterranean ambient depth blooms and faint distant crystal twinkles.
+        DrawCircleV({w * 0.25f, h * 0.30f}, h * 0.34f, draw::withAlpha({70, 96, 138, 255}, 0.09f));
+        DrawCircleV({w * 0.72f, h * 0.42f}, h * 0.38f, draw::withAlpha({92, 72, 128, 255}, 0.08f));
+        Rng rng(0xCA7E77ull);
+        for (int i = 0; i < 48; ++i) {
+            const float x = std::fmod(rng.range(0.0f, w * 2.0f) - centre_.x * 3.0f, w * 2.0f);
+            const float sx = x < 0.0f ? x + w * 2.0f : x;
+            const float sy = rng.range(h * 0.06f, h * 0.72f);
+            const float twinkle = 0.25f + 0.55f * (0.5f + 0.5f * std::sin(time * rng.range(1.2f, 3.2f) + static_cast<float>(i)));
+            const Color glow = (i % 3 == 0) ? Color{240, 185, 85, 255} : Color{95, 220, 245, 255};
+            DrawCircleV({sx - w * 0.5f, sy}, rng.range(1.0f, 2.4f) * (h / 720.0f), draw::withAlpha(glow, twinkle));
+        }
+        return;
+    }
 
     if (pal.stars) {
         Rng rng(77);
@@ -293,6 +426,11 @@ void WorldView::drawHills(const Palette& pal, int layer) const
             case Scenery::Spires: drawPine(base, size * 1.1f, dark, BLANK); break;
             case Scenery::Rocks: drawSpire(base, size, dark); break;
             case Scenery::Boulders: drawRock(base, size * 0.6f, dark); break;
+            case Scenery::Cave: {
+                const Color glow = rng.chance(0.55f) ? Color{85, 220, 245, 210} : Color{245, 185, 80, 210};
+                drawStalagmite(base, size * 0.95f, dark, glow, rng.chance(0.45f));
+                break;
+            }
             }
         }
     }
@@ -356,7 +494,7 @@ void WorldView::drawTerrain(const Session& session, const Palette& pal, const As
     }
     rlEnd();
 
-    // Surface strip (grass / sand / snow), following the normals.
+    // Surface strip (grass / sand / snow / mud), following the normals.
     const float thick = 0.48f;
     rlSetTexture(assets.surfaceTexture.id);
     rlBegin(RL_QUADS);
@@ -365,8 +503,10 @@ void WorldView::drawTerrain(const Session& session, const Palette& pal, const As
         const b2Vec2 b = top[static_cast<size_t>(k + 1)];
         const b2Vec2 na = normal[static_cast<size_t>(k)];
         const b2Vec2 nb = normal[static_cast<size_t>(k + 1)];
-        const bool ice = gen.isIce((a.x + b.x) * 0.5f);
-        const Color c = ice ? pal.ice : pal.surface;
+        const float midX = (a.x + b.x) * 0.5f;
+        const bool ice = gen.isIce(midX);
+        const bool mud = gen.isMud(midX);
+        const Color c = ice ? pal.ice : (mud ? pal.mud : pal.surface);
         const b2Vec2 a2 = b2MulAdd(a, -thick, na);
         const b2Vec2 b2 = b2MulAdd(b, -thick, nb);
         rlColor4ub(c.r, c.g, c.b, 255);
@@ -382,21 +522,145 @@ void WorldView::drawTerrain(const Session& session, const Palette& pal, const As
     rlEnd();
     rlSetTexture(0);
 
-    // Darker underside of the strip and a crisp top edge.
+    // Darker underside of the strip and a crisp top edge (plus ice sheen / wet mud ripples).
     for (int k = 0; k + 1 < n; ++k) {
         const b2Vec2 a = top[static_cast<size_t>(k)];
         const b2Vec2 b = top[static_cast<size_t>(k + 1)];
         const b2Vec2 na = normal[static_cast<size_t>(k)];
         const b2Vec2 nb = normal[static_cast<size_t>(k + 1)];
-        const bool ice = gen.isIce((a.x + b.x) * 0.5f);
-        const Color edge = ice ? draw::shade(pal.ice, 0.8f) : pal.surfaceEdge;
+        const float midX = (a.x + b.x) * 0.5f;
+        const bool ice = gen.isIce(midX);
+        const bool mud = gen.isMud(midX);
+        const Color edge = ice ? draw::shade(pal.ice, 0.8f) : (mud ? draw::shade(pal.mud, 0.70f) : pal.surfaceEdge);
         const Vector2 q[4] = {draw::rv(b2MulAdd(a, -thick * 0.78f, na)), draw::rv(b2MulAdd(a, -thick, na)),
                               draw::rv(b2MulAdd(b, -thick, nb)), draw::rv(b2MulAdd(b, -thick * 0.78f, nb))};
         DrawTriangle(q[0], q[1], q[2], edge);
         DrawTriangle(q[0], q[2], q[3], edge);
         DrawLineEx(draw::rv(a), draw::rv(b), 0.06f, draw::withAlpha(kInk, 0.55f));
-        if (ice && k % 6 == 0) {
+        const int sampleIdx = i0 + k;
+        if (ice && sampleIdx % 6 == 0) {
             DrawLineEx(draw::rv(b2MulAdd(a, -0.12f, na)), draw::rv(b2MulAdd(b, -0.12f, nb)), 0.05f, draw::withAlpha(WHITE, 0.8f));
+        } else if (mud && (sampleIdx % 5 == 0 || sampleIdx % 7 == 0)) {
+            const float depth = (sampleIdx % 5 == 0) ? -0.11f : -0.23f;
+            DrawLineEx(draw::rv(b2MulAdd(a, depth, na)), draw::rv(b2MulAdd(b, depth, nb)), 0.045f,
+                       draw::withAlpha({146, 108, 78, 255}, 0.6f));
+        }
+    }
+
+    // Cave ceiling: textured rock mass above ceilingHeight(x), rugged rim, stalactites, and hanging lights.
+    if (gen.hasCeiling()) {
+        const float topY = centre_.y + halfH + 2.0f;
+        std::vector<b2Vec2> ceilPts(static_cast<size_t>(n));
+        std::vector<b2Vec2> ceilNorm(static_cast<size_t>(n));
+        for (int k = 0; k < n; ++k) {
+            const float x = Terrain::sampleX(i0 + k);
+            ceilPts[static_cast<size_t>(k)] = {x, gen.ceilingHeight(x)};
+        }
+        for (int k = 0; k < n; ++k) {
+            const b2Vec2 ca = ceilPts[static_cast<size_t>(std::max(0, k - 1))];
+            const b2Vec2 cb = ceilPts[static_cast<size_t>(std::min(n - 1, k + 1))];
+            const b2Vec2 tangent = b2Normalize(b2Sub(cb, ca));
+            ceilNorm[static_cast<size_t>(k)] = {-tangent.y, tangent.x};  // points up into ceiling rock
+        }
+
+        const Color deepCeil = draw::shade(pal.ceiling, 0.58f);
+        rlSetTexture(assets.groundTexture.id);
+        rlBegin(RL_QUADS);
+        for (int k = 0; k + 1 < n; ++k) {
+            const b2Vec2 ca = ceilPts[static_cast<size_t>(k)];
+            const b2Vec2 cb = ceilPts[static_cast<size_t>(k + 1)];
+            const float band = 5.5f;
+            // Band 1: ceiling surface up 5.5 m into rock, darkening upward.
+            rlColor4ub(pal.ceiling.r, pal.ceiling.g, pal.ceiling.b, 255);
+            rlTexCoord2f(ca.x / tile, -ca.y / tile);
+            rlVertex2f(ca.x, -ca.y);
+            rlColor4ub(deepCeil.r, deepCeil.g, deepCeil.b, 255);
+            rlTexCoord2f(ca.x / tile, -(ca.y + band) / tile);
+            rlVertex2f(ca.x, -(ca.y + band));
+            rlTexCoord2f(cb.x / tile, -(cb.y + band) / tile);
+            rlVertex2f(cb.x, -(cb.y + band));
+            rlColor4ub(pal.ceiling.r, pal.ceiling.g, pal.ceiling.b, 255);
+            rlTexCoord2f(cb.x / tile, -cb.y / tile);
+            rlVertex2f(cb.x, -cb.y);
+            // Band 2: solid up to topY.
+            if (std::fmin(ca.y, cb.y) + band < topY) {
+                rlColor4ub(deepCeil.r, deepCeil.g, deepCeil.b, 255);
+                rlTexCoord2f(ca.x / tile, -(ca.y + band) / tile);
+                rlVertex2f(ca.x, -(ca.y + band));
+                rlTexCoord2f(ca.x / tile, -topY / tile);
+                rlVertex2f(ca.x, -topY);
+                rlTexCoord2f(cb.x / tile, -topY / tile);
+                rlVertex2f(cb.x, -topY);
+                rlTexCoord2f(cb.x / tile, -(cb.y + band) / tile);
+                rlVertex2f(cb.x, -(cb.y + band));
+            }
+        }
+        rlEnd();
+        rlSetTexture(0);
+
+        // Rugged underside rim along the ceiling + crisp dark ink outline.
+        const float ceilThick = 0.42f;
+        for (int k = 0; k + 1 < n; ++k) {
+            const b2Vec2 ca = ceilPts[static_cast<size_t>(k)];
+            const b2Vec2 cb = ceilPts[static_cast<size_t>(k + 1)];
+            const b2Vec2 cna = ceilNorm[static_cast<size_t>(k)];
+            const b2Vec2 cnb = ceilNorm[static_cast<size_t>(k + 1)];
+            const Vector2 rq[4] = {draw::rv(ca), draw::rv(b2MulAdd(ca, ceilThick, cna)),
+                                   draw::rv(b2MulAdd(cb, ceilThick, cnb)), draw::rv(cb)};
+            DrawTriangle(rq[0], rq[1], rq[2], pal.ceilingEdge);
+            DrawTriangle(rq[0], rq[2], rq[3], pal.ceilingEdge);
+            DrawLineEx(draw::rv(ca), draw::rv(cb), 0.08f, draw::withAlpha(kInk, 0.85f));
+        }
+
+        // Deterministic hanging stalactites and warm/cyan cave lanterns/crystals along the ceiling.
+        const float stalSpacing = 2.6f;
+        const float minX = Terrain::sampleX(i0);
+        const float maxX = Terrain::sampleX(i1);
+        for (float slot = std::floor(minX / stalSpacing); slot * stalSpacing < maxX; slot += 1.0f) {
+            Rng rng(hashCombine(session.stage().seed ^ 0xCA7E57A1ull, static_cast<uint64_t>(static_cast<int64_t>(slot))));
+            if (!rng.chance(0.70f)) continue;
+            const float x = slot * stalSpacing + rng.range(0.15f, stalSpacing - 0.15f);
+            const float cy = terrain.ceilingHeight(x) + 0.12f;
+            const float drop = rng.range(0.45f, 1.05f);
+            const float halfBase = drop * rng.range(0.28f, 0.42f);
+            const Vector2 left = draw::rv(x - halfBase, cy);
+            const Vector2 right = draw::rv(x + halfBase, cy);
+            const Vector2 tip = draw::rv(x + rng.range(-0.08f, 0.08f), cy - drop);
+            const Vector2 midBase = draw::rv(x, cy);
+            DrawTriangle(left, tip, right, pal.ceilingEdge);
+            DrawTriangle(midBase, tip, right, draw::shade(pal.ceilingEdge, 0.78f));
+            DrawLineEx(left, tip, 0.05f, draw::withAlpha(kInk, 0.8f));
+            DrawLineEx(tip, right, 0.05f, draw::withAlpha(kInk, 0.8f));
+        }
+
+        const float lampSpacing = 9.5f;
+        for (float slot = std::floor(minX / lampSpacing); slot * lampSpacing < maxX; slot += 1.0f) {
+            if (slot * lampSpacing < 8.0f && slot * lampSpacing > -15.0f) continue;
+            Rng rng(hashCombine(session.stage().seed ^ 0xCA7E1A39ull, static_cast<uint64_t>(static_cast<int64_t>(slot))));
+            if (!rng.chance(0.85f)) continue;
+            const float x = slot * lampSpacing + rng.range(1.0f, lampSpacing - 1.0f);
+            const float cy = terrain.ceilingHeight(x) + 0.06f;
+            if (rng.chance(0.50f)) {
+                // Small warm hanging cave lantern.
+                const b2Vec2 anchor{x, cy};
+                const b2Vec2 bulb{x, cy - 0.55f};
+                draw::line(anchor, bulb, 0.04f, kInk);
+                draw::circle(bulb, 0.85f, draw::withAlpha({255, 196, 90, 255}, 0.16f));
+                draw::circle(bulb, 0.42f, draw::withAlpha({255, 220, 130, 255}, 0.28f));
+                draw::circleOutlined(bulb, 0.14f, {255, 232, 150, 255}, kInk, 0.04f);
+            } else {
+                // Hanging glowing ceiling crystal cluster.
+                const Color crys = rng.chance(0.55f) ? Color{85, 225, 250, 255} : Color{250, 185, 75, 255};
+                const b2Vec2 center{x, cy - 0.30f};
+                draw::circle(center, 0.90f, draw::withAlpha(crys, 0.16f));
+                const Vector2 pL = draw::rv(x - 0.18f, cy);
+                const Vector2 pR = draw::rv(x + 0.18f, cy);
+                const Vector2 pTip = draw::rv(x, cy - 0.65f);
+                DrawTriangle(pL, pTip, pR, crys);
+                DrawTriangle(draw::rv(x, cy), pTip, pR, draw::shade(crys, 0.78f));
+                DrawLineEx(pL, pTip, 0.04f, kInk);
+                DrawLineEx(pTip, pR, 0.04f, kInk);
+            }
         }
     }
 }
@@ -411,7 +675,8 @@ void WorldView::drawProps(const Session& session, const Palette& pal) const
         Rng rng(hashCombine(session.stage().seed ^ 0x9909ull, static_cast<uint64_t>(static_cast<int64_t>(slot))));
         if (!rng.chance(0.55f)) continue;
         const float x = slot * spacing + rng.range(0.0f, spacing);
-        if (terrain.generator().isIce(x)) continue;
+        if (terrain.generator().isIce(x) || terrain.generator().isMud(x)) continue;
+        if (terrain.bridgeDeckHeight(x) > -1e5f) continue;
         const b2Vec2 base{x, terrain.surfaceHeight(x) - 0.05f};
         const Vector2 at = draw::rv(base);
         const float roll = rng.unit();
@@ -445,6 +710,13 @@ void WorldView::drawProps(const Session& session, const Palette& pal) const
         case Scenery::Boulders:
             if (roll < 0.5f) drawRock(at, rng.range(0.3f, 0.6f), draw::shade(pal.surfaceEdge, rng.range(0.8f, 1.1f)));
             break;
+        case Scenery::Cave: {
+            const Color glow = rng.chance(0.55f) ? Color{85, 225, 250, 255} : Color{250, 185, 75, 255};
+            if (roll < 0.35f) drawStalagmite(at, rng.range(0.45f, 0.85f), pal.surfaceEdge, glow, true);
+            else if (roll < 0.75f) drawStalagmite(at, rng.range(0.40f, 0.80f), draw::shade(pal.surfaceEdge, 0.9f), glow, false);
+            else drawRock(at, rng.range(0.30f, 0.50f), pal.surfaceEdge);
+            break;
+        }
         }
     }
 }
@@ -575,12 +847,20 @@ void drawStagePreview(const StageDef& stage, Rectangle r, float time)
     BeginScissorMode(static_cast<int>(r.x), static_cast<int>(r.y), static_cast<int>(r.width), static_cast<int>(r.height));
     DrawRectangleGradientV(static_cast<int>(r.x), static_cast<int>(r.y), static_cast<int>(r.width) + 1,
                            static_cast<int>(r.height) + 1, pal.skyTop, pal.skyBottom);
-    if (pal.stars) {
-        Rng rng(5);
-        for (int i = 0; i < 30; ++i) DrawCircleV({r.x + rng.range(0.0f, r.width), r.y + rng.range(0.0f, r.height * 0.6f)}, 1.2f, WHITE);
+    if (pal.cave) {
+        Rng rng(0xCA7E55ull);
+        for (int i = 0; i < 18; ++i) {
+            const Color c = (i % 3 == 0) ? Color{240, 185, 85, 160} : Color{95, 220, 245, 160};
+            DrawCircleV({r.x + rng.range(0.0f, r.width), r.y + rng.range(r.height * 0.22f, r.height * 0.65f)}, 1.4f, c);
+        }
+    } else {
+        if (pal.stars) {
+            Rng rng(5);
+            for (int i = 0; i < 30; ++i) DrawCircleV({r.x + rng.range(0.0f, r.width), r.y + rng.range(0.0f, r.height * 0.6f)}, 1.2f, WHITE);
+        }
+        if (pal.planet) DrawCircleV({r.x + r.width * 0.78f, r.y + r.height * 0.22f}, r.height * 0.11f, {60, 120, 220, 255});
+        else DrawCircleV({r.x + r.width * 0.78f, r.y + r.height * 0.22f}, r.height * 0.09f, pal.sun);
     }
-    if (pal.planet) DrawCircleV({r.x + r.width * 0.78f, r.y + r.height * 0.22f}, r.height * 0.11f, {60, 120, 220, 255});
-    else DrawCircleV({r.x + r.width * 0.78f, r.y + r.height * 0.22f}, r.height * 0.09f, pal.sun);
 
     TerrainGenerator gen(stage);
     Noise1D far(stage.seed * 7 + 1);
@@ -600,6 +880,34 @@ void drawStagePreview(const StageDef& stage, Rectangle r, float time)
         if (layer == 2) {
             for (size_t i = 0; i < strip.size(); i += 2) strip[i].y += r.height * 0.035f;
             DrawTriangleStrip(strip.data(), static_cast<int>(strip.size()), pal.ground);
+        }
+    }
+
+    if (stage.feature == TerrainFeature::CaveCeiling) {
+        strip.clear();
+        for (float sx = 0.0f; sx <= r.width + 4.0f; sx += 4.0f) {
+            const float wx = 400.0f + sx / r.width * 80.0f;
+            const float y = r.y + r.height * 0.24f - far.fbm(wx * 0.08f + 3.0f, 3) * r.height * 0.08f;
+            strip.push_back({r.x + sx, r.y - 2.0f});
+            strip.push_back({r.x + sx, y});
+        }
+        DrawTriangleStrip(strip.data(), static_cast<int>(strip.size()), pal.ceilingEdge);
+        for (size_t i = 1; i < strip.size(); i += 2) strip[i].y -= r.height * 0.04f;
+        DrawTriangleStrip(strip.data(), static_cast<int>(strip.size()), pal.ceiling);
+
+        Rng rng(stage.seed ^ 0xCA7E57u);
+        for (int i = 0; i < 7; ++i) {
+            const float sx = r.x + r.width * (0.08f + 0.14f * static_cast<float>(i)) + rng.range(-4.0f, 4.0f);
+            const float wx = 400.0f + (sx - r.x) / r.width * 80.0f;
+            const float ceilY = r.y + r.height * 0.24f - far.fbm(wx * 0.08f + 3.0f, 3) * r.height * 0.08f;
+            const float baseY = ceilY - r.height * 0.02f;
+            const float drop = r.height * rng.range(0.08f, 0.15f);
+            const float hw = drop * 0.36f;
+            DrawTriangle({sx - hw, baseY}, {sx, baseY + drop}, {sx + hw, baseY}, pal.ceilingEdge);
+            if (i % 3 == 1) {
+                const Color glow = (i == 1) ? Color{85, 225, 250, 230} : Color{250, 185, 75, 230};
+                DrawCircleV({sx + hw * 1.4f, baseY + drop * 0.35f}, 2.4f, glow);
+            }
         }
     }
     EndScissorMode();

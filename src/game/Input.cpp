@@ -73,6 +73,7 @@ void Input::update()
             IsKeyDown(KEY_F11) || ((IsKeyDown(KEY_LEFT_ALT) || IsKeyDown(KEY_RIGHT_ALT)) && IsKeyDown(KEY_ENTER));
         real[idx(Action::Screenshot)] = IsKeyDown(KEY_F12);
         real[idx(Action::Debug)] = IsKeyDown(KEY_F3);
+        real[idx(Action::Special)] = anyKey({KEY_SPACE, KEY_UP, KEY_W}) || padButton(GAMEPAD_BUTTON_RIGHT_FACE_UP);
 
         realGas = real[idx(Action::Gas)] ? 1.0f : 0.0f;
         realBrake = real[idx(Action::Brake)] ? 1.0f : 0.0f;
@@ -85,6 +86,7 @@ void Input::update()
     for (size_t i = 0; i < kCount; ++i) cur_[i] = real[i] || virtual_[i];
     gas_ = std::fmax(realGas, virtual_[idx(Action::Gas)] ? 1.0f : 0.0f);
     brake_ = std::fmax(realBrake, virtual_[idx(Action::Brake)] ? 1.0f : 0.0f);
+    special_ = (real[idx(Action::Special)] || virtual_[idx(Action::Special)]) ? 1.0f : 0.0f;
 
     // Mouse (touch screens report as a mouse too).
     const Vector2 realMouse = GetMousePosition();

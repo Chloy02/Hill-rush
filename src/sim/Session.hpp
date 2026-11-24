@@ -17,8 +17,9 @@ inline constexpr float kFixedDt = 1.0f / 60.0f;
 inline constexpr int kSubSteps = 8;
 
 struct InputState {
-    float gas = 0.0f;    // 0..1
-    float brake = 0.0f;  // 0..1
+    float gas = 0.0f;      // 0..1
+    float brake = 0.0f;    // 0..1
+    float special = 0.0f;  // 0..1 (Thrusters / Nitro)
 };
 
 enum class RunState {
@@ -40,7 +41,12 @@ enum class EventType {
     OutOfFuel,
     Crash,
     NewRecord,
-    Landing,    // seconds = air time, impact = fall speed (m/s)
+    Landing,       // seconds = air time, impact = fall speed (m/s)
+    Wheelie,       // value = coins, seconds = wheelie time, count = step
+    CleanLanding,  // value = coins, count = flips
+    LuckyFuel,     // value = coins
+    RollCageHit,   // count = hitsLeft
+    RollCageBreak,
 };
 
 struct GameEvent {
@@ -63,6 +69,9 @@ struct RunResult {
     int backFlips = 0;
     int frontFlips = 0;
     int neckFlips = 0;
+    int wheelies = 0;
+    int cleanLandings = 0;
+    int luckyFuels = 0;
     int levelsReached = 0;     // levels newly completed this run
     float bestAirTime = 0.0f;
     float duration = 0.0f;
@@ -78,6 +87,11 @@ int airTimeStep(float seconds);
 int airTimeBonus(float seconds);
 const char* airTimeLabel(int step);
 
+// Wheelie bonus: starts at 2.0 s (100, 150, 200 ... up to 5000).
+int wheelieStep(float seconds);
+int wheelieBonus(float seconds);
+const char* wheelieLabel(int step);
+
 // One run of one vehicle on one stage.
 class Session {
 public:
@@ -87,6 +101,8 @@ public:
     static constexpr float kFlipAngle = 3.0f * 3.14159265f / 2.0f;  // 270 degrees counts as a flip
     static constexpr int kFlipBonus = 1000;
     static constexpr int kNeckFlipBonus = 2500;
+    static constexpr int kCleanLandingBonus = 500;
+    static constexpr int kLuckyFuelBonus = 1000;
 
     // `levelsCompleted` is how many level checkpoints of this stage the player
     // has already been paid for; only newer levels pay out again.
@@ -113,6 +129,13 @@ public:
     long long coins() const { return result_.totalCoins(); }
     bool airborne() const { return airborne_; }
     float airTime() const { return airborne_ ? time_ - airStart_ : 0.0f; }
+    float nitro() const { return nitro_; }
+    bool hasNitro() const { return !vehicle_->tuning().hasThrusters() && vehicle_->tuning().nitroAccel > 0.0f; }
+    bool hasThrusters() const { return vehicle_->tuning().hasThrusters(); }
+    bool thrusting() const { return vehicle_->thrusting(); }
+    bool boosting() const { return vehicle_->boosting(); }
+    bool wheeling() const { return wheelieTime_ > 0.0f; }
+    float wheelieTime() const { return wheelieTime_; }
     float engineRpm() const { return rpm_; }  // 0..1, smoothed
     float throttle() const { return throttle_; }
     int levelsCompleted() const { return levelsCompleted_; }
@@ -127,7 +150,9 @@ public:
     static float startX() { return 0.0f; }
 
 private:
+    void addNitro(float amount);
     void updateBonuses();
+    void updateWheelie(float dt);
     void checkLevels();
     void crash();
     void finish(EndReason reason);
@@ -171,6 +196,9 @@ private:
     int jumpFrontFlips_ = 0;
     float lastFlipTime_ = -100.0f;
     float peakFallSpeed_ = 0.0f;
+    float nitro_ = 0.0f;
+    float wheelieTime_ = 0.0f;
+    int wheelieGrace_ = 0;
 };
 
 const char* endReasonText(EndReason reason);

@@ -18,11 +18,13 @@ public:
     void reset();
     void update(float dt, const Session& session);
     void onEvent(const GameEvent& event, const Session& session);
-    void draw(const Session& session, Ui& ui, bool gasDown, bool brakeDown, bool showPedals) const;
+    void draw(const Session& session, Ui& ui, bool gasDown, bool brakeDown, bool showPedals,
+              bool specialDown = false) const;
 
     // Screen rectangles of the touch/mouse controls (depend on window size).
     static Rectangle gasPedal(const Ui& ui);
     static Rectangle brakePedal(const Ui& ui);
+    static Rectangle specialPedal(const Ui& ui);
     static Rectangle pauseButton(const Ui& ui);
 
     // Big centred message (e.g. "DRIVER DOWN!").
@@ -41,9 +43,12 @@ private:
 
     void drawFuel(const Session& session, Ui& ui) const;
     void drawCoins(Ui& ui) const;
+    void drawNitro(const Session& session, Ui& ui) const;
+    void drawRollCage(const Session& session, Ui& ui) const;
     void drawDistance(const Session& session, Ui& ui) const;
     void drawGauges(const Session& session, Ui& ui) const;
     void drawPedal(Ui& ui, Rectangle r, bool gas, bool down) const;
+    void drawSpecialPedal(Ui& ui, Rectangle r, const Session& session, bool down) const;
     void drawBanners(Ui& ui) const;
 
     std::deque<Banner> banners_;

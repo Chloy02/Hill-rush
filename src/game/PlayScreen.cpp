@@ -147,16 +147,22 @@ void PlayScreen::update(float dt)
     // Pedals: keyboard/gamepad plus the on-screen pedals (mouse/touch).
     float gas = in.gas();
     float brake = in.brake();
+    float special = in.special();
     if (in.mouseDown() && !paused_) {
         if (CheckCollisionPointRec(in.mouse(), Hud::gasPedal(ui))) gas = 1.0f;
         if (CheckCollisionPointRec(in.mouse(), Hud::brakePedal(ui))) brake = 1.0f;
+        if ((session.hasThrusters() || session.hasNitro()) &&
+            CheckCollisionPointRec(in.mouse(), Hud::specialPedal(ui))) {
+            special = 1.0f;
+        }
     }
-    if (!app_.options().autoplay) input_ = {gas, brake};
+    if (!app_.options().autoplay) input_ = {gas, brake, special};
 
     if (!paused_) run_->update(dt);
 
     const bool engineRunning = !paused_ && !session.isOver() && session.state() == RunState::Running;
-    app_.audio().setEngine(engineRunning, session.engineRpm(), session.throttle());
+    app_.audio().setEngine(engineRunning, session.engineRpm(), session.throttle(), engineVoiceFor(vehicle_.id),
+                           session.boosting() ? 1.0f : 0.0f, session.thrusting());
 
     if (runOver && !showResults_) {
         endDelay_ += dt;
@@ -192,15 +198,17 @@ void PlayScreen::draw()
     run_->drawWorld(time_, paused_ || showResults_, debug_);
 
     if (!showResults_) {
-        Input& in = app_.input();
         const bool gasDown = input_.gas > 0.0f;
         const bool brakeDown = input_.brake > 0.0f;
-        (void)in;
-        run_->hud().draw(run_->session(), ui, gasDown, brakeDown, true);
+        const bool specialDown = input_.special > 0.0f;
+        run_->hud().draw(run_->session(), ui, gasDown, brakeDown, true, specialDown);
         if (tutorial_) drawTutorial();
         if (testDrive_) {
+            float y = 122.0f;
+            if (run_->session().hasNitro()) y += 34.0f;
+            if (run_->session().vehicle().hasRollCage()) y += 32.0f;
             ui.text(app_.options().autoplay ? "AUTOPILOT - TEST DRIVE" : "TEST DRIVE - progress not saved",
-                    {ui.px(20), ui.px(118)}, ui.px(22), {255, 200, 120, 255}, Align::Left);
+                    {ui.px(20), ui.px(y)}, ui.px(22), {255, 200, 120, 255}, Align::Left);
         }
     }
     if (debug_) {
@@ -222,15 +230,18 @@ void PlayScreen::drawTutorial()
     const float alpha = clampf(std::fmin((14.0f - t) / 2.0f, (70.0f - run_->session().distance()) / 15.0f), 0.0f, 1.0f);
     if (alpha <= 0.0f) return;
     Ui& ui = app_.ui();
-    const Rectangle r = ui.anchored(0.5f, 1.0f, 0, -150, 760, 112);
+    const Rectangle r = ui.anchored(0.5f, 1.0f, 0, -150, 780, 138);
     DrawRectangleRounded(r, 0.3f, 8, draw::withAlpha({20, 22, 34, 255}, 0.75f * alpha));
     const Color white = draw::withAlpha(WHITE, alpha);
     const Color gold = draw::withAlpha({255, 214, 60, 255}, alpha);
-    ui.text("Hold RIGHT (or D) to drive  -  LEFT (or A) brakes and reverses", {r.x + r.width * 0.5f, r.y + ui.px(14)},
-            ui.px(26), white, Align::Center);
-    ui.text("In the air: RIGHT tips you back, LEFT tips you forward", {r.x + r.width * 0.5f, r.y + ui.px(46)},
-            ui.px(24), gold, Align::Center);
-    ui.text("Grab fuel cans and never land on your head!", {r.x + r.width * 0.5f, r.y + ui.px(76)}, ui.px(22), white,
+    const Color cyan = draw::withAlpha({120, 230, 255, 255}, alpha);
+    ui.text("Hold RIGHT (or D) to drive  -  LEFT (or A) brakes and reverses", {r.x + r.width * 0.5f, r.y + ui.px(12)},
+            ui.px(25), white, Align::Center);
+    ui.text("In the air: RIGHT tips you back, LEFT tips you forward", {r.x + r.width * 0.5f, r.y + ui.px(42)},
+            ui.px(23), gold, Align::Center);
+    ui.text("Press SPACE for Nitro Boost (or Moonlander Thrusters)", {r.x + r.width * 0.5f, r.y + ui.px(72)},
+            ui.px(22), cyan, Align::Center);
+    ui.text("Grab fuel cans and never land on your head!", {r.x + r.width * 0.5f, r.y + ui.px(102)}, ui.px(21), white,
             Align::Center);
 }
 
@@ -293,7 +304,16 @@ void PlayScreen::drawResults()
         y += ui.px(38);
     };
     row("Coins collected", "+" + formatThousands(r.pickupCoins), {255, 230, 120, 255});
-    std::snprintf(line, sizeof(line), "Tricks  (air x%d  flips x%d  neck x%d)", r.airTimes, r.flips(), r.neckFlips);
+    if (r.wheelies > 0 && r.neckFlips > 0) {
+        std::snprintf(line, sizeof(line), "Tricks (air x%d  flip x%d  wheelie x%d  neck x%d)", r.airTimes, r.flips(),
+                      r.wheelies, r.neckFlips);
+    } else if (r.wheelies > 0) {
+        std::snprintf(line, sizeof(line), "Tricks  (air x%d  flips x%d  wheelie x%d)", r.airTimes, r.flips(),
+                      r.wheelies);
+    } else {
+        std::snprintf(line, sizeof(line), "Tricks  (air x%d  flips x%d  neck x%d)", r.airTimes, r.flips(),
+                      r.neckFlips);
+    }
     row(line, "+" + formatThousands(r.bonusCoins), {150, 220, 255, 255});
     if (r.levelCoins > 0) {
         std::snprintf(line, sizeof(line), "Level rewards  (x%d)", r.levelsReached);

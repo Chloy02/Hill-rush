@@ -18,9 +18,12 @@ InputState Bot::think(const Session& session)
     const b2Vec2 vel = v.velocity();
     const float x = v.position().x;
 
+    const bool hasCeiling = terrain.generator().hasCeiling();
+    const float headroom = hasCeiling ? (terrain.ceilingHeight(x) - v.position().y) : 1e6f;
+
     if (v.airborne()) {
         const float height = v.position().y - terrain.surfaceHeight(x);
-        if (stunts_ && height > 4.0f && vel.y > -2.0f) {
+        if (stunts_ && height > 4.0f && vel.y > -2.0f && (!hasCeiling || headroom > 3.5f)) {
             in.gas = 1.0f;  // keep rotating backwards while there is room
         } else {
             // Land parallel to the ground where we are about to touch down.
@@ -40,17 +43,24 @@ InputState Bot::think(const Session& session)
         const float speed = v.speed();
         if (vel.x > 3.0f && !stunts_) {
             const float g = session.stage().gravity;
+            const float speedFactor = hasCeiling ? 1.15f : 1.4f;
             for (float ahead = 2.0f; ahead <= std::fmin(30.0f, speed * 1.2f + 4.0f); ahead += 2.0f) {
                 const float a0 = terrain.surfaceAngle(x + ahead - 2.0f);
                 const float a1 = terrain.surfaceAngle(x + ahead + 2.0f);
                 const float curvature = (a1 - a0) / 4.0f;  // negative over a crest
                 if (curvature >= -0.02f) continue;
                 const float launchSpeed = std::sqrt(g / -curvature);
-                if (speed > launchSpeed * 1.4f) {
+                if (speed > launchSpeed * speedFactor) {
                     in.gas = 0.0f;  // lift off; braking would kill the momentum for the next climb
                     break;
                 }
             }
+        }
+
+        // Fire Nitro on steep climbs when struggling, as long as the nose isn't lifting.
+        if (session.hasNitro() && session.nitro() > 0.08f && in.gas > 0.0f &&
+            slope > 0.35f && speed < 5.5f && lift < 0.35f) {
+            in.special = 1.0f;
         }
     }
 
@@ -59,6 +69,12 @@ InputState Bot::think(const Session& session)
     if (retreatTimer_ <= 0.0f) {
         if (v.speed() < 0.5f && in.gas > 0.0f && !v.airborne()) stuckTimer_ += dt;
         else stuckTimer_ = 0.0f;
+        if (session.hasNitro() && session.nitro() > 0.05f && stuckTimer_ > 0.4f && in.gas > 0.0f) {
+            in.special = 1.0f;
+        } else if (session.hasThrusters() && stuckTimer_ > 0.6f && std::fabs(wrapAngle(angle)) < 0.5f &&
+                   (!hasCeiling || headroom > 3.5f)) {
+            in.special = 1.0f;
+        }
         if (stuckTimer_ > 1.5f) {
             stuckTimer_ = 0.0f;
             retreatTimer_ = 6.0f;

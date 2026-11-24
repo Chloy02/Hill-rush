@@ -24,16 +24,25 @@ public:
     // Samples are spaced this far apart; the ground is linear between them.
     static constexpr float kSampleStep = 0.5f;
 
+    // Plank bridges on MudPits stages.
+    static constexpr float kBridgeFirst = 160.0f;
+    static constexpr float kBridgeInterval = 180.0f;
+    static constexpr float kBridgeSpan = 12.0f;
+
     explicit TerrainGenerator(const StageDef& stage);
 
     // Ground height (metres) at world x: the slope-capped sample polyline.
     float height(float x) const;
     float sample(int index) const;
 
-    // True where the ground is ice (Arctic only).
+    // True where the ground is ice (Arctic) or mud (Muddy Forest).
     bool isIce(float x) const;
+    bool isMud(float x) const;
+    bool hasCeiling() const { return stage_->feature == TerrainFeature::CaveCeiling; }
+    float ceilingHeight(float x) const;
 
     float friction(float x) const;
+    float rollingResistance(float x) const;
 
     const StageDef& stage() const { return *stage_; }
 
@@ -45,12 +54,15 @@ private:
     // Medium/Hard: extra rough ground, faded out where a steep climb starts.
     float extraBumps(float x) const;
     float craterOffset(float x) const;
+    float creekOffset(float x) const;
     float ramp(float x) const;
 
     const StageDef* stage_;
     Noise1D layers_[3];
     Noise1D iceNoise_;
     Noise1D bumpNoise_;
+    Noise1D mudNoise_;
+    Noise1D ceilingNoise_;
     // Capped samples for x >= 0, generated in order from the start line so the
     // result is identical every time.
     mutable std::vector<float> samples_;
@@ -64,6 +76,19 @@ public:
     static constexpr float kStep = TerrainGenerator::kSampleStep;
     static constexpr int kSamplesPerChunk = 128;
     static constexpr float kChunkWidth = kStep * kSamplesPerChunk;
+
+    struct BridgePlank {
+        b2BodyId body;
+        float halfW;
+        float halfH;
+    };
+    struct Bridge {
+        float x0;
+        float x1;
+        float y0;
+        float y1;
+        std::vector<BridgePlank> planks;
+    };
 
     Terrain(b2WorldId world, const StageDef& stage);
     ~Terrain();
@@ -81,17 +106,25 @@ public:
     float surfaceHeight(float x) const;
     // Angle (radians) of the polyline segment under x. Positive = uphill.
     float surfaceAngle(float x) const;
+    // Height of the cave ceiling polyline at x (or 1e6f if no ceiling).
+    float ceilingHeight(float x) const;
+    // Analytic height of the bridge deck at x (or -1e6f if not on a bridge).
+    float bridgeDeckHeight(float x) const;
 
     const TerrainGenerator& generator() const { return generator_; }
+    const std::map<int, std::vector<Bridge>>& bridges() const { return bridges_; }
     int chunkCount() const { return static_cast<int>(chunks_.size()); }
 
 private:
     void createChunk(int index);
+    void createBridge(int chunkIndex, float bx0);
 
     b2WorldId world_;
     b2BodyId groundBody_;
     TerrainGenerator generator_;
     std::map<int, b2ChainId> chunks_;
+    std::map<int, b2ChainId> ceilingChunks_;
+    std::map<int, std::vector<Bridge>> bridges_;
 };
 
 } // namespace hr

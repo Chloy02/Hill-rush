@@ -115,6 +115,28 @@ void Particles::dust(b2Vec2 at, b2Vec2 direction, Color color, float strength)
     }
 }
 
+void Particles::mudSplash(b2Vec2 at, b2Vec2 direction, float strength)
+{
+    const int n = 2 + static_cast<int>(strength * 3.0f);
+    const Color mudBase{82, 54, 32, 240};
+    for (int i = 0; i < n; ++i) {
+        Particle p{};
+        p.pos = {at.x + rng_.range(-0.16f, 0.16f), at.y + rng_.range(0.0f, 0.12f)};
+        const float spd = rng_.range(1.8f, 4.8f) * (0.5f + strength);
+        p.vel = {direction.x * spd + rng_.range(-0.9f, 0.9f), std::fabs(direction.y) * spd + rng_.range(1.4f, 3.6f)};
+        p.maxLife = p.life = rng_.range(0.35f, 0.70f);
+        p.size = rng_.range(0.05f, 0.11f);
+        p.growth = -0.02f;
+        p.gravity = 11.0f;
+        p.drag = 0.8f;
+        p.color = draw::shade(mudBase, rng_.range(0.75f, 1.15f));
+        p.shape = rng_.chance(0.65f) ? ParticleShape::Circle : ParticleShape::Square;
+        p.spin = rng_.range(-10.0f, 10.0f);
+        p.fade = true;
+        add(p);
+    }
+}
+
 void Particles::exhaust(b2Vec2 at, b2Vec2 direction, float throttle)
 {
     Particle p{};
@@ -130,6 +152,52 @@ void Particles::exhaust(b2Vec2 at, b2Vec2 direction, float throttle)
     p.shape = ParticleShape::Circle;
     p.fade = true;
     add(p);
+}
+
+void Particles::flame(b2Vec2 at, b2Vec2 direction, Color core, Color outer, float speed)
+{
+    const float len = b2Length(direction);
+    const b2Vec2 dir = len > 1e-4f ? b2MulSV(1.0f / len, direction) : b2Vec2{0.0f, -1.0f};
+    const b2Vec2 perp{-dir.y, dir.x};
+    const int n = rng_.chance(0.5f) ? 3 : 2;
+    for (int i = 0; i < n; ++i) {
+        Particle p{};
+        p.pos = b2MulAdd(at, rng_.range(-0.04f, 0.04f), perp);
+        const float spd = speed * rng_.range(0.75f, 1.15f);
+        const float spread = rng_.range(-0.22f, 0.22f) * speed;
+        p.vel = b2MulAdd(b2MulSV(spd, dir), spread, perp);
+        p.maxLife = p.life = (i == 0) ? rng_.range(0.08f, 0.14f) : rng_.range(0.11f, 0.19f);
+        p.size = (i == 0) ? rng_.range(0.08f, 0.13f) : rng_.range(0.11f, 0.18f);
+        p.growth = -p.size / p.maxLife * 0.85f;
+        p.gravity = -1.5f;
+        p.drag = 3.5f;
+        p.color = (i == 0) ? core : draw::mix(core, outer, rng_.range(0.35f, 1.0f));
+        p.shape = ParticleShape::Circle;
+        p.fade = true;
+        add(p);
+    }
+}
+
+void Particles::sparks(b2Vec2 at, int count, float speed)
+{
+    const Color yellow{255, 245, 130, 255};
+    const Color orange{255, 125, 25, 255};
+    for (int i = 0; i < count; ++i) {
+        Particle p{};
+        p.pos = {at.x + rng_.range(-0.12f, 0.12f), at.y + rng_.range(-0.08f, 0.08f)};
+        const float a = rng_.range(-0.4f, kPi + 0.4f);
+        const float spd = speed * rng_.range(0.45f, 1.15f);
+        p.vel = {std::cos(a) * spd, std::sin(a) * spd + rng_.range(0.4f, 1.8f)};
+        p.maxLife = p.life = rng_.range(0.24f, 0.52f);
+        p.size = rng_.range(0.035f, 0.065f);
+        p.growth = -0.04f;
+        p.gravity = 12.0f;
+        p.drag = 1.4f;
+        p.color = draw::mix(yellow, orange, rng_.range(0.0f, 1.0f));
+        p.shape = ParticleShape::Spark;
+        p.fade = true;
+        add(p);
+    }
 }
 
 void Particles::sparkle(b2Vec2 at, Color color, int count)

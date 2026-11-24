@@ -25,6 +25,8 @@ enum class TerrainFeature {
     None,
     Craters,     // moon-style bowls with raised rims
     IcePatches,  // slippery stretches with much lower friction
+    CaveCeiling, // low ceiling with hanging stalactites
+    MudPits,     // deep sticky mud stretches and plank bridges
 };
 
 enum class Difficulty { Easy, Medium, Hard };
@@ -50,6 +52,10 @@ struct StageDef {
     float maxSlopeEnd = 52.0f;
     TerrainFeature feature = TerrainFeature::None;
     float iceFriction = 0.12f;     // used by TerrainFeature::IcePatches
+    float mudFriction = 0.65f;     // used by TerrainFeature::MudPits
+    float mudRollingResistance = 0.24f;
+    float ceilingBase = 8.6f;      // nominal clearance above ground on Cave
+    float ceilingMin = 4.9f;       // hard minimum clearance so tall vehicles never pinch
 
     // Fuel can n (0-based) sits at fuelFirst + n*fuelGap + fuelGapGrowth*n(n-1)/2.
     float fuelFirst = 90.0f;
@@ -108,6 +114,8 @@ enum class UpgradeKind {
     FuelTank,     // fuel lasts longer
     AirControl,   // rotation torque while airborne
     Downforce,    // presses the car onto the road at speed
+    Thrusters,    // upward rocket lift
+    RollCage,     // extra roof impacts absorbed before breaking
 };
 
 // Levels run from 1 (stock) to maxLevel. Buying level L costs costFactor * L^2.
@@ -162,6 +170,15 @@ struct VehicleDef {
     float downforce = 0.0f;           // N per (m/s)^2
     float engineTorqueGain = 2.0f;    // torque multiplier with the engine fully upgraded
     float engineSpeedGain = 1.55f;    // top wheel speed multiplier with the engine fully upgraded
+    float thrusterAccel = 0.0f;       // m/s^2 upward acceleration in chassis-local {0, 1}
+    float thrusterFuelRate = 2.6f;    // extra fuel drain multiplier while thrusting
+    float thrusterGain = 1.55f;       // max-level multiplier on thrusterAccel
+    float nitroAccel = 11.5f;         // m/s^2 forward thrust when firing stunt-charged Nitro
+    std::vector<ConvexPart> rollCage; // optional breakable roof cage polygon(s)
+    int rollCageHits = 0;             // heavy roof impacts absorbed before breaking
+
+    bool hasThrusters() const { return thrusterAccel > 0.0f; }
+    bool hasRollCage() const { return !rollCage.empty() && rollCageHits > 0; }
 
     std::array<UpgradeSlot, 4> upgrades{};
 };
@@ -183,6 +200,12 @@ struct VehicleTuning {
     float groundTilt;
     float fuelSeconds;
     float downforce;
+    float thrusterAccel;
+    float thrusterFuelRate;
+    float nitroAccel;
+    int rollCageHits;
+
+    bool hasThrusters() const { return thrusterAccel > 0.0f; }
 };
 
 using UpgradeLevels = std::array<int, 4>;

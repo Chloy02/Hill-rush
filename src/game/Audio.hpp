@@ -20,8 +20,16 @@ enum class Sfx {
     GameOver,
     Fanfare,
     Denied,
+    RollCageHit,
+    RollCageBreak,
+    LuckyFuel,
+    Wheelie,
     Count
 };
+
+enum class EngineVoice { Standard, TwoStroke, Diesel, Race, Electric, Rally };
+
+EngineVoice engineVoiceFor(const std::string& vehicleId);
 
 // All sound is synthesised at start-up: effects into memory buffers, music
 // into a looping track, and the engine live in an audio-thread callback.
@@ -39,7 +47,8 @@ public:
     void play(Sfx sfx, float pitch = 1.0f, float volume = 1.0f);
 
     // Engine sound parameters (smoothed on the audio thread).
-    void setEngine(bool running, float rpm, float throttle);
+    void setEngine(bool running, float rpm, float throttle, EngineVoice voice = EngineVoice::Standard,
+                   float boost = 0.0f, bool thrusting = false);
 
     void setMusicOn(bool on);
     void setMusicDuck(float factor);  // in-game the music sits lower

@@ -21,6 +21,7 @@ bool actionFor(const std::string& name, Action& out)
         {"down", Action::Down},       {"left", Action::Left},     {"right", Action::Right},
         {"confirm", Action::Confirm}, {"back", Action::Back},     {"pause", Action::Pause},
         {"restart", Action::Restart}, {"fullscreen", Action::Fullscreen},
+        {"special", Action::Special}, {"boost", Action::Special},
     };
     for (const auto& [n, a] : table) {
         if (name == n) {

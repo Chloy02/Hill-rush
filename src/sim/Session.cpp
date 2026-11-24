@@ -55,6 +55,26 @@ const char* airTimeLabel(int step)
     return "INSANE AIR TIME";
 }
 
+int wheelieStep(float seconds)
+{
+    if (seconds < 2.0f) return 0;
+    return static_cast<int>(std::floor((seconds - 2.0f) / 0.25f)) + 1;
+}
+
+int wheelieBonus(float seconds)
+{
+    const int step = wheelieStep(seconds);
+    if (step <= 0) return 0;
+    return std::min(5000, 100 + 50 * (step - 1));
+}
+
+const char* wheelieLabel(int step)
+{
+    if (step <= 4) return "WHEELIE";
+    if (step <= 8) return "SUPER WHEELIE";
+    return "INSANE WHEELIE";
+}
+
 Session::Session(const StageDef& stage, const VehicleDef& vehicle, const UpgradeLevels& upgrades,
                  float bestDistance, int levelsCompleted)
     : stage_(stage), vehicleDef_(&vehicle), bestDistance_(bestDistance), levelsCompleted_(levelsCompleted)
@@ -78,6 +98,7 @@ Session::Session(const StageDef& stage, const VehicleDef& vehicle, const Upgrade
 
     maxX_ = startX();
     lastAngle_ = vehicle_->angle();
+    nitro_ = vehicle.hasThrusters() ? 0.0f : 0.35f;
     LOG_INFO("Session start: stage=%s (%s) vehicle=%s torque=%.0f speed=%.1f grip=%.2f fuel=%.0fs 4wd=%.2f",
              stage_.id.c_str(), difficultyDef(stage_.difficulty).key, vehicle.id.c_str(), tuning.motorTorque,
              tuning.maxWheelSpeed, tuning.tireFriction, tuning.fuelSeconds, tuning.frontDriveShare);
@@ -98,9 +119,18 @@ void Session::step(const InputState& input)
     const float dt = kFixedDt;
     time_ += dt;
 
-    // Fuel drains with time whether or not the throttle is open, like the original.
+    const bool engineOn = state_ == RunState::Running;
+    const float gas = engineOn ? input.gas : 0.0f;
+    const float brake = engineOn ? input.brake : 0.0f;
+    const float special = engineOn ? input.special : 0.0f;
+    const bool nitroReady = engineOn && hasNitro() && nitro_ > 0.0f;
+    vehicle_->applyControls(gas, brake, special, engineOn, nitroReady, dt);
+    throttle_ = gas;
+
+    // Fuel drains with time (and faster while firing thrusters).
     if (state_ == RunState::Running) {
-        fuel_ -= dt / vehicle_->tuning().fuelSeconds;
+        const float fuelRate = vehicle_->thrusting() ? (1.0f + vehicle_->tuning().thrusterFuelRate) : 1.0f;
+        fuel_ -= dt * fuelRate / vehicle_->tuning().fuelSeconds;
         if (fuel_ <= kLowFuel && !lowFuelWarned_) {
             lowFuelWarned_ = true;
             emit({EventType::LowFuel, vehicle_->position()});
@@ -111,16 +141,26 @@ void Session::step(const InputState& input)
             endTimer_ = 0.0f;
             emit({EventType::OutOfFuel, vehicle_->position()});
         }
+        if (vehicle_->boosting()) {
+            nitro_ = clampf(nitro_ - 0.55f * dt, 0.0f, 1.0f);
+        }
     }
 
-    const bool engineOn = state_ == RunState::Running;
-    const float gas = engineOn ? input.gas : 0.0f;
-    const float brake = engineOn ? input.brake : 0.0f;
-    vehicle_->applyControls(gas, brake, engineOn, dt);
-    throttle_ = gas;
-
     b2World_Step(world_, dt, kSubSteps);
-    vehicle_->updateContacts();
+    vehicle_->updateContacts(dt);
+
+    if (state_ != RunState::Crashed) {
+        const RollCageEvent cageEvt = vehicle_->consumeRollCageEvent();
+        if (cageEvt == RollCageEvent::Hit) {
+            GameEvent e{EventType::RollCageHit, b2Body_GetPosition(vehicle_->headBody())};
+            e.count = vehicle_->rollCageHitsLeft();
+            emit(e);
+        } else if (cageEvt == RollCageEvent::Broken) {
+            emit({EventType::RollCageBreak, b2Body_GetPosition(vehicle_->headBody())});
+        }
+    } else {
+        (void)vehicle_->consumeRollCageEvent();
+    }
 
     const b2Vec2 pos = vehicle_->position();
     if (!std::isfinite(pos.x) || !std::isfinite(pos.y)) {
@@ -158,11 +198,18 @@ void Session::step(const InputState& input)
         for (const Pickup& p : collected_) {
             if (p.kind == PickupKind::Coin) {
                 result_.pickupCoins += p.value;
+                addNitro(0.02f);
                 emit({EventType::Coin, p.pos, p.value});
             } else {
+                const bool wasOut = state_ == RunState::OutOfFuel;
                 fuel_ = 1.0f;
                 lowFuelWarned_ = false;
-                if (state_ == RunState::OutOfFuel) state_ = RunState::Running;  // "lucky fuel"
+                if (wasOut) {
+                    state_ = RunState::Running;
+                    result_.bonusCoins += kLuckyFuelBonus;
+                    result_.luckyFuels++;
+                    emit({EventType::LuckyFuel, p.pos, kLuckyFuelBonus});
+                }
                 emit({EventType::Fuel, p.pos});
             }
         }
@@ -176,6 +223,7 @@ void Session::step(const InputState& input)
     if (state_ != RunState::Crashed && upsideDownTimer_ > kUpsideDownLimit) crash();
 
     updateBonuses();
+    updateWheelie(dt);
 
     // End conditions.
     if (state_ == RunState::Crashed) {
@@ -221,6 +269,11 @@ void Session::checkLevels()
     }
 }
 
+void Session::addNitro(float amount)
+{
+    if (hasNitro()) nitro_ = clampf(nitro_ + amount, 0.0f, 1.0f);
+}
+
 void Session::updateBonuses()
 {
     const bool contact = !vehicle_->airborne();
@@ -256,6 +309,7 @@ void Session::updateBonuses()
             result_.bonusCoins += kFlipBonus;
             (back ? result_.backFlips : result_.frontFlips)++;
             lastFlipTime_ = time_;
+            addNitro(0.40f);
             emit({EventType::Flip, vehicle_->position(), kFlipBonus, 0.0f, 0.0f, number, back});
         };
         while (rotation_ >= kFlipAngle + kTwoPi * static_cast<float>(jumpBackFlips_)) {
@@ -275,13 +329,60 @@ void Session::updateBonuses()
         emit({EventType::Landing, vehicle_->position(), 0, airTime, peakFallSpeed_});
         const int bonus = airTimeBonus(airTime);
         if (state_ != RunState::Crashed && bonus > 0) {
+            const int step = airTimeStep(airTime);
             result_.bonusCoins += bonus;
             result_.airTimes++;
+            addNitro(0.20f + 0.04f * static_cast<float>(step));
             GameEvent e{EventType::AirTime, vehicle_->position(), bonus, airTime};
-            e.count = airTimeStep(airTime);
+            e.count = step;
+            emit(e);
+        }
+        const int jumpFlips = jumpBackFlips_ + jumpFrontFlips_;
+        if (state_ != RunState::Crashed && jumpFlips > 0 && !vehicle_->chassisTouchingGround() &&
+            std::fabs(wrapAngle(vehicle_->angle() - terrain_->surfaceAngle(vehicle_->position().x))) < 0.35f) {
+            const int cleanBonus = kCleanLandingBonus * jumpFlips;
+            result_.bonusCoins += cleanBonus;
+            result_.cleanLandings++;
+            addNitro(0.25f);
+            GameEvent e{EventType::CleanLanding, vehicle_->position(), cleanBonus};
+            e.count = jumpFlips;
             emit(e);
         }
     }
+}
+
+void Session::updateWheelie(float dt)
+{
+    const bool active = state_ == RunState::Running && !airborne_ && vehicle_->wheelCount() >= 2 &&
+                        vehicle_->rearWheelOnGround() && !vehicle_->frontWheelOnGround() &&
+                        vehicle_->velocity().x > 1.5f;
+    if (active) {
+        wheelieGrace_ = 0;
+        wheelieTime_ += dt;
+        return;
+    }
+    if (wheelieTime_ <= 0.0f) return;
+    if (state_ == RunState::Crashed) {
+        wheelieTime_ = 0.0f;
+        wheelieGrace_ = 0;
+        return;
+    }
+    if (++wheelieGrace_ <= 6) return;
+
+    if (wheelieTime_ >= 2.0f) {
+        const int bonus = wheelieBonus(wheelieTime_);
+        const int step = wheelieStep(wheelieTime_);
+        if (bonus > 0) {
+            result_.bonusCoins += bonus;
+            result_.wheelies++;
+            addNitro(0.25f + 0.04f * static_cast<float>(step));
+            GameEvent e{EventType::Wheelie, vehicle_->position(), bonus, wheelieTime_};
+            e.count = step;
+            emit(e);
+        }
+    }
+    wheelieTime_ = 0.0f;
+    wheelieGrace_ = 0;
 }
 
 void Session::finish(EndReason reason)

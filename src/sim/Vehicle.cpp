@@ -48,6 +48,19 @@ Vehicle::Vehicle(b2WorldId world, const VehicleDef& def, const VehicleTuning& tu
     }
     probeRadius_ = extent * 0.55f;
 
+    if (!def.rollCage.empty() && tuning_.rollCageHits > 0) {
+        rollCageMaxHits_ = tuning_.rollCageHits;
+        rollCageHitsLeft_ = tuning_.rollCageHits;
+        for (const ConvexPart& part : def.rollCage) {
+            b2Hull hull = b2ComputeHull(part.points.data(), static_cast<int>(part.points.size()));
+            b2Polygon polygon = b2MakePolygon(&hull, 0.02f);
+            b2ShapeDef shapeDef = vehicleShapeDef();
+            shapeDef.density = part.density;
+            shapeDef.material.friction = 0.45f;
+            rollCageShapes_.push_back(b2CreatePolygonShape(chassis_, &shapeDef, &polygon));
+        }
+    }
+
     // Wheels ------------------------------------------------------------------
     for (const WheelDef& wd : def.wheels) {
         Wheel wheel{};
@@ -119,20 +132,26 @@ Vehicle::Vehicle(b2WorldId world, const VehicleDef& def, const VehicleTuning& tu
     neckDef.upperAngle = kNeckLimit;
     neck_ = b2CreateRevoluteJoint(world_, &neckDef);
 
-    // Inertia of the whole vehicle about the chassis centre of mass, so air
-    // control can be specified as an angular acceleration.
-    const b2Vec2 com = b2Body_GetWorldCenterOfMass(chassis_);
-    systemInertia_ = b2Body_GetRotationalInertia(chassis_);
-    auto addBody = [&](b2BodyId body) {
-        const float m = b2Body_GetMass(body);
-        systemInertia_ += b2Body_GetRotationalInertia(body) + m * b2DistanceSquared(b2Body_GetWorldCenterOfMass(body), com);
-    };
-    for (const Wheel& w : wheels_) addBody(w.body);
-    addBody(head_);
+    updateMassProperties();
 
     float shareSum = 0.0f;
     for (const Wheel& w : wheels_) shareSum += w.driveShare;
     for (Wheel& w : wheels_) w.driveShare = shareSum > 0.0f ? w.driveShare / shareSum : 0.0f;
+}
+
+void Vehicle::updateMassProperties()
+{
+    // Mass and rotational inertia of the whole vehicle about the chassis centre of mass.
+    const b2Vec2 com = b2Body_GetWorldCenterOfMass(chassis_);
+    totalMass_ = b2Body_GetMass(chassis_);
+    systemInertia_ = b2Body_GetRotationalInertia(chassis_);
+    auto addBody = [&](b2BodyId body) {
+        const float m = b2Body_GetMass(body);
+        totalMass_ += m;
+        systemInertia_ += b2Body_GetRotationalInertia(body) + m * b2DistanceSquared(b2Body_GetWorldCenterOfMass(body), com);
+    };
+    for (const Wheel& w : wheels_) addBody(w.body);
+    addBody(head_);
 }
 
 Vehicle::~Vehicle()
@@ -145,28 +164,35 @@ Vehicle::~Vehicle()
     if (b2Body_IsValid(chassis_)) b2DestroyBody(chassis_);
 }
 
-void Vehicle::applyControls(float gas, float brake, bool engineOn, float dt)
+void Vehicle::applyControls(float gas, float brake, float special, bool engineOn, bool nitroReady, float dt)
 {
     (void)dt;
+    preStepSpeed_ = speed();
     gas = clampf(gas, 0.0f, 1.0f);
     brake = clampf(brake, 0.0f, 1.0f);
-    if (!engineOn) gas = 0.0f;
+    special = clampf(special, 0.0f, 1.0f);
+    if (!engineOn) {
+        gas = 0.0f;
+        brake = 0.0f;  // an empty tank also kills the brakes, like the original
+        special = 0.0f;
+    }
 
-    if (!engineOn) brake = 0.0f;  // an empty tank also kills the brakes, like the original
+    thrusting_ = false;
+    boosting_ = false;
 
     for (Wheel& w : wheels_) {
-        float speed = 0.0f;
+        float wSpeed = 0.0f;
         float torque = kCoastTorque;
         if (gas > 0.0f && w.driveShare > 0.0f) {
             // Negative angular velocity = clockwise = rolling to the right.
-            speed = -tuning_.maxWheelSpeed;
+            wSpeed = -tuning_.maxWheelSpeed;
             torque = tuning_.motorTorque * w.driveShare * gas;
         } else if (brake > 0.0f) {
             // The brake pedal brakes every wheel, then reverses once stopped.
-            speed = tuning_.reverseWheelSpeed;
+            wSpeed = tuning_.reverseWheelSpeed;
             torque = tuning_.brakeTorque * brake;
         }
-        b2WheelJoint_SetMotorSpeed(w.joint, speed);
+        b2WheelJoint_SetMotorSpeed(w.joint, wSpeed);
         b2WheelJoint_SetMaxMotorTorque(w.joint, torque);
     }
 
@@ -190,6 +216,16 @@ void Vehicle::applyControls(float gas, float brake, bool engineOn, float dt)
         b2Body_ApplyTorque(chassis_, torque, true);
     }
 
+    if (engineOn && special > 0.0f && tuning_.thrusterAccel > 0.0f) {
+        thrusting_ = true;
+        const b2Vec2 up = b2Body_GetWorldVector(chassis_, {0.0f, 1.0f});
+        b2Body_ApplyForceToCenter(chassis_, b2MulSV(totalMass_ * tuning_.thrusterAccel * special, up), true);
+    } else if (engineOn && special > 0.0f && nitroReady && tuning_.nitroAccel > 0.0f) {
+        boosting_ = true;
+        const b2Vec2 fwd = b2Body_GetWorldVector(chassis_, {1.0f, 0.0f});
+        b2Body_ApplyForceToCenter(chassis_, b2MulSV(totalMass_ * tuning_.nitroAccel * special, fwd), true);
+    }
+
     if (tuning_.downforce > 0.0f && wheelsOnGround() > 0) {
         const b2Vec2 v = b2Body_GetLinearVelocity(chassis_);
         const float magnitude = tuning_.downforce * b2LengthSquared(v);
@@ -208,11 +244,60 @@ bool Vehicle::bodyTouching(b2BodyId body)
     return false;
 }
 
-void Vehicle::updateContacts()
+bool Vehicle::shapeTouching(b2ShapeId shape)
+{
+    if (!b2Shape_IsValid(shape)) return false;
+    b2ContactData contacts[8];
+    const int count = b2Shape_GetContactData(shape, contacts, 8);
+    for (int i = 0; i < count; ++i) {
+        if (contacts[i].manifold.pointCount > 0) return true;
+    }
+    return false;
+}
+
+void Vehicle::updateContacts(float dt)
 {
     for (Wheel& w : wheels_) w.onGround = bodyTouching(w.body);
     chassisTouching_ = bodyTouching(chassis_);
     headTouching_ = bodyTouching(head_);
+
+    rollCageCooldown_ = std::fmax(0.0f, rollCageCooldown_ - dt);
+    rollCageEvent_ = RollCageEvent::None;
+    if (rollCageHitsLeft_ > 0) {
+        bool cageTouching = false;
+        for (b2ShapeId s : rollCageShapes_) {
+            if (shapeTouching(s)) {
+                cageTouching = true;
+                break;
+            }
+        }
+        const float impactSpeed = std::fmax(speed(), preStepSpeed_);
+        if ((cageTouching || headTouching_) && rollCageCooldown_ <= 0.0f &&
+            (impactSpeed > 2.2f || headTouching_)) {
+            rollCageHitsLeft_--;
+            rollCageCooldown_ = 0.65f;
+            headTouching_ = false;
+            if (rollCageHitsLeft_ <= 0) {
+                for (b2ShapeId s : rollCageShapes_) {
+                    if (b2Shape_IsValid(s)) b2DestroyShape(s, true);
+                }
+                rollCageShapes_.clear();
+                updateMassProperties();
+                rollCageEvent_ = RollCageEvent::Broken;
+            } else {
+                rollCageEvent_ = RollCageEvent::Hit;
+            }
+        } else if (headTouching_ && rollCageCooldown_ > 0.0f) {
+            headTouching_ = false;
+        }
+    }
+}
+
+RollCageEvent Vehicle::consumeRollCageEvent()
+{
+    const RollCageEvent e = rollCageEvent_;
+    rollCageEvent_ = RollCageEvent::None;
+    return e;
 }
 
 void Vehicle::rigidMove(float angle, b2Vec2 offset)
@@ -236,6 +321,21 @@ int Vehicle::wheelsOnGround() const
     int n = 0;
     for (const Wheel& w : wheels_) n += w.onGround ? 1 : 0;
     return n;
+}
+
+bool Vehicle::rearWheelOnGround() const
+{
+    if (wheels_.empty()) return false;
+    const size_t half = std::max<size_t>(1, wheels_.size() / 2);
+    for (size_t i = 0; i < half; ++i) {
+        if (wheels_[i].onGround) return true;
+    }
+    return false;
+}
+
+bool Vehicle::frontWheelOnGround() const
+{
+    return !wheels_.empty() && wheels_.back().onGround;
 }
 
 b2Vec2 Vehicle::position() const { return b2Body_GetPosition(chassis_); }

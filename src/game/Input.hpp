@@ -22,6 +22,7 @@ enum class Action {
     Fullscreen,
     Screenshot,
     Debug,
+    Special,
     Count
 };
 
@@ -38,6 +39,7 @@ public:
     // Analogue pedals in [0, 1] (keyboard gives 0 or 1, triggers anything between).
     float gas() const { return gas_; }
     float brake() const { return brake_; }
+    float special() const { return special_; }
 
     Vector2 mouse() const { return mouse_; }
     bool mouseDown() const { return mouseDown_; }
@@ -77,6 +79,7 @@ private:
     std::array<bool, kCount> virtual_{};
     float gas_ = 0.0f;
     float brake_ = 0.0f;
+    float special_ = 0.0f;
     Vector2 mouse_{};
     Vector2 lastRealMouse_{};
     bool mouseDown_ = false;
